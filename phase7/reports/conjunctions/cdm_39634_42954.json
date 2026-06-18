@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.595842+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 42954,
+    "name": "VRSS-2"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 19.40002475147874,
+  "miss_distance_km": 85.1057982766505,
+  "radial_miss_km": -63.15189818455367,
+  "binormal_miss_km": 57.05115799644861,
+  "pc": 3.0082920085641354e-126,
+  "pc_chan_crosscheck": 0.0,
+  "pc_methods_agree": true,
+  "mahalanobis": 23.58828490178356,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 3.865316691012635,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      12.457085191105952,
+      -2.592386740386418
+    ],
+    [
+      -2.5923869456872475,
+      8.700127710499851
+    ]
+  ],
+  "secondary_name": "VRSS-2"
+}

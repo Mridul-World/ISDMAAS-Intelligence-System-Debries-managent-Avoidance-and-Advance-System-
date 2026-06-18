@@ -1,0 +1,21 @@
+{
+  "event": "iridium_cosmos_2009",
+  "title": "Iridium 33 \u00d7 Cosmos 2251 collision",
+  "outcome": "COLLISION",
+  "isdmaas": {
+    "miss_distance_km": 2978.833243378143,
+    "pc": 0.0,
+    "risk_level": "NOMINAL",
+    "mahalanobis": 1958.2883147742573,
+    "relative_speed_kms": 11.890912441949759
+  },
+  "tca_utc": "2009-02-09T17:33:00+00:00",
+  "recommendation": "NO MANEUVER \u2014 Pc below action threshold.",
+  "documented": {
+    "altitude_km": 789,
+    "rel_velocity_kms": 11.7,
+    "socrates_predicted_miss_m": 584,
+    "socrates_rank": "64 of ~250 (not flagged as top threat)",
+    "note": "First accidental hypervelocity collision of two intact satellites. Public TLEs lacked covariance; the event was NOT ranked among the most critical that day \u2014 a known limitation of TLE-only screening without uncertainty."
+  }
+}

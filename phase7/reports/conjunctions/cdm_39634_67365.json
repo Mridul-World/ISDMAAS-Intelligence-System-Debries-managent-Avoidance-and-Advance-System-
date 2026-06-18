@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.605052+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 67365,
+    "name": "LEMUR-2-MARIO-SOUSA"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 38.93433125977435,
+  "miss_distance_km": 128.01195896389783,
+  "radial_miss_km": 86.99778424179577,
+  "binormal_miss_km": -93.90658493644706,
+  "pc": 3.600354126587069e-296,
+  "pc_chan_crosscheck": 3.584158911428159e-296,
+  "pc_methods_agree": true,
+  "mahalanobis": 36.59042223518128,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 1.1724559518811324,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      13.152252900614677,
+      -2.139568132209636
+    ],
+    [
+      -2.1395683788311914,
+      8.680163641164478
+    ]
+  ],
+  "secondary_name": "LEMUR-2-MARIO-SOUSA"
+}

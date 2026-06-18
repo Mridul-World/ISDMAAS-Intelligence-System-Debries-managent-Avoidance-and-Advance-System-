@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.612090+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 27606,
+    "name": "LATINSAT B"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 2.972333612268167,
+  "miss_distance_km": 167.38649828295937,
+  "radial_miss_km": 142.64346857252272,
+  "binormal_miss_km": 87.5844667211489,
+  "pc": 0.0,
+  "pc_chan_crosscheck": 0.0,
+  "pc_methods_agree": true,
+  "mahalanobis": 63.465551764577654,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 9.846416164746946,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      5.169253539832101,
+      4.046582563735529
+    ],
+    [
+      4.046582698896436,
+      9.491573943563136
+    ]
+  ],
+  "secondary_name": "LATINSAT B"
+}

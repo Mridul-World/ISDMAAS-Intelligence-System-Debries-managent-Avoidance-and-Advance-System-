@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.603710+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 59343,
+    "name": "YUNHAI-3 02"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 190.14352383353526,
+  "radial_miss_km": 34.51723567666762,
+  "binormal_miss_km": -37.94600599996374,
+  "pc": 6.540852716842515e-253,
+  "pc_chan_crosscheck": 6.413822258669912e-253,
+  "pc_methods_agree": true,
+  "mahalanobis": 33.778293070656616,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 0.1538215368406605,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      6.98775939092072,
+      5.406401221311259
+    ],
+    [
+      5.40640117226912,
+      8.489963046779666
+    ]
+  ],
+  "secondary_name": "YUNHAI-3 02"
+}

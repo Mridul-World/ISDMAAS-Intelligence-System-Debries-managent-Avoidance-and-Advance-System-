@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.596885+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 48079,
+    "name": "GAOFEN-12 02"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 181.04583674566575,
+  "radial_miss_km": -6.766910145451741,
+  "binormal_miss_km": -63.11360946633299,
+  "pc": 1.0647452666638926e-138,
+  "pc_chan_crosscheck": 1.0573532537853419e-138,
+  "pc_methods_agree": true,
+  "mahalanobis": 24.776086715173754,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 1.2024390175836306,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      12.985270763902006,
+      -4.928172691836059
+    ],
+    [
+      -4.928172942005556,
+      8.938830223348475
+    ]
+  ],
+  "secondary_name": "GAOFEN-12 02"
+}

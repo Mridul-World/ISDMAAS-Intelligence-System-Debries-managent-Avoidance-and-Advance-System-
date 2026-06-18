@@ -1,0 +1,16 @@
+{
+    "phase4": {
+        "position_error_km": 7570.5879,
+        "energy_error": 45.9498,
+        "momentum_error": 52740.0938,
+        "sma_error_km": 3753.3735,
+        "period_error_sec": 3920.1348
+    },
+    "phase5": {
+        "position_error_km": 6624.7344,
+        "energy_error": 118.6726,
+        "momentum_error": 51242.0352,
+        "sma_error_km": 5618.7217,
+        "period_error_sec": 5357.1479
+    }
+}

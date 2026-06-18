@@ -1,0 +1,106 @@
+{
+  "primary": "SENTINEL-1A",
+  "plan": {
+    "pre_maneuver": {
+      "miss_distance_km": 0.039999999999775736,
+      "pc": 0.000284175182181657,
+      "risk_level": "CRITICAL",
+      "tca_s_from_epoch": 0.0
+    },
+    "action_required": true,
+    "options": [
+      {
+        "burn_lead_time_h": 0.75,
+        "dv_ms": 2.3121896429074695,
+        "direction": "prograde",
+        "new_miss_km": 18.72882149475379,
+        "new_pc": 9.999999974181046e-08,
+        "new_risk": "NOMINAL",
+        "fuel_kg": 2.46362856823763
+      },
+      {
+        "burn_lead_time_h": 1.5,
+        "dv_ms": 1.1560948214537348,
+        "direction": "prograde",
+        "new_miss_km": 18.72882149475379,
+        "new_pc": 9.999999974181046e-08,
+        "new_risk": "NOMINAL",
+        "fuel_kg": 1.2321443231693374
+      },
+      {
+        "burn_lead_time_h": 3.0,
+        "dv_ms": 0.5780474111816147,
+        "direction": "prograde",
+        "new_miss_km": 18.728821509487474,
+        "new_pc": 9.9999998490994e-08,
+        "new_risk": "NOMINAL",
+        "fuel_kg": 0.6161546939402074
+      },
+      {
+        "burn_lead_time_h": 6.0,
+        "dv_ms": 0.28902370559080737,
+        "direction": "prograde",
+        "new_miss_km": 18.728821509487474,
+        "new_pc": 9.9999998490994e-08,
+        "new_risk": "NOMINAL",
+        "fuel_kg": 0.30809798270219346
+      }
+    ],
+    "recommendation": {
+      "dv_rtn_ms": [
+        0.0,
+        0.28902370559080737,
+        0.0
+      ],
+      "dv_magnitude_ms": 0.28902370559080737,
+      "direction": "prograde",
+      "burn_lead_time_h": 6.0,
+      "fuel_kg": 0.30809798270219346,
+      "predicted_new_miss_km": 18.728821509487474,
+      "predicted_new_pc": 9.9999998490994e-08,
+      "predicted_new_risk": "NOMINAL"
+    }
+  },
+  "validation": {
+    "verdict": "APPROVED",
+    "failed_checks": [],
+    "dv_ms": 0.28902370559080737,
+    "burn_lead_h": 6.0,
+    "fuel_required_kg": 0.30809798270219346,
+    "checks": [
+      {
+        "check": "fuel_budget",
+        "pass": true,
+        "fuel_required_kg": 0.30809798270219346,
+        "fuel_required_with_margin_kg": 0.4005273775128515,
+        "fuel_available_kg": 5.0,
+        "reason": "sufficient"
+      },
+      {
+        "check": "orbit_safety",
+        "pass": true,
+        "post_sma_km": 7075.724758155739,
+        "post_perigee_alt_km": 686.3338474795046,
+        "post_apogee_alt_km": 708.8416688319758,
+        "reason": "orbit within safe limits"
+      },
+      {
+        "check": "original_threat_resolved",
+        "pass": true,
+        "post_maneuver_pc": 9.9999998490994e-08,
+        "post_maneuver_miss_km": 18.728821509487474,
+        "reason": "threat cleared"
+      },
+      {
+        "check": "no_new_conjunction",
+        "pass": true,
+        "objects_rescreened": 4513,
+        "worst_new_pc": 4.370233219151458e-89,
+        "worst_new_object": "SMAP",
+        "worst_new_norad": 40376,
+        "worst_new_miss_km": 38.22943329055838,
+        "reason": "no new conjunction created"
+      }
+    ]
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.595257+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 2826,
+    "name": "OPS 5712 (P/L 160)"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 128.22955770944,
+  "radial_miss_km": 57.172119771100895,
+  "binormal_miss_km": -18.858509193824883,
+  "pc": 2.2002217752022457e-119,
+  "pc_chan_crosscheck": 2.1857977258443667e-119,
+  "pc_methods_agree": true,
+  "mahalanobis": 22.955999885054773,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 14.323297500472083,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      7.334070281674494,
+      -3.876238679334289
+    ],
+    [
+      -3.876238862710523,
+      3.6356098473708633
+    ]
+  ],
+  "secondary_name": "OPS 5712 (P/L 160)"
+}

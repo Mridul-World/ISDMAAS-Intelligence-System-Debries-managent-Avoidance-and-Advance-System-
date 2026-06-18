@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISDMAAS · Mission Console</title>
+<style>
+  :root{
+    --bg:#04060d; --panel:rgba(11,16,28,.82); --panel2:rgba(20,28,46,.6);
+    --line:#1e2a44; --line2:#2c3c5c; --txt:#dde6f5; --dim:#7488a8; --faint:#4a5a78;
+    --accent:#3d8bff; --cyan:#39d4e8; --green:#34d399; --amber:#fbbf24; --red:#f4506a;
+    --mono:'SF Mono','Roboto Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--txt);font-family:'Inter',system-ui,-apple-system,sans-serif;overflow:hidden;user-select:none}
+  #scene{position:fixed;inset:0;z-index:0}
+  .ov{position:fixed;z-index:2}
+  #top{top:0;left:0;right:0;height:54px;padding:0 22px;display:flex;justify-content:space-between;
+       align-items:center;background:linear-gradient(180deg,rgba(4,6,13,.95),rgba(4,6,13,0));
+       border-bottom:1px solid rgba(30,42,68,.4)}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:26px;height:26px;border:1.5px solid var(--accent);border-radius:6px;position:relative;
+        display:flex;align-items:center;justify-content:center}
+  .logo::before{content:'';width:11px;height:11px;border:1.5px solid var(--cyan);border-radius:50%}
+  .logo::after{content:'';position:absolute;width:21px;height:8px;border:1px solid var(--accent);
+        border-radius:50%;transform:rotate(-28deg);opacity:.7}
+  h1{font-size:15px;font-weight:600;letter-spacing:.5px}
+  h1 b{color:var(--accent);font-weight:700}
+  .tag{font-size:9.5px;color:var(--faint);letter-spacing:2px;text-transform:uppercase;margin-top:1px}
+  #sysstat{display:flex;align-items:center;gap:18px;font-size:11px;color:var(--dim);font-family:var(--mono)}
+  .stitem{display:flex;align-items:center;gap:6px}
+  .led{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red)}
+  .led.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+  .led.cy{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
+  #deck{top:70px;left:16px;width:312px;display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+        border-radius:12px;padding:15px 16px}
+  .card .hd{font-size:10px;text-transform:uppercase;letter-spacing:1.6px;color:var(--dim);
+            margin-bottom:11px;display:flex;align-items:center;gap:7px}
+  .card .hd::before{content:'';width:3px;height:11px;background:var(--accent);border-radius:2px}
+  label{display:block;font-size:10px;color:var(--faint);margin:0 0 4px;letter-spacing:.4px;text-transform:uppercase}
+  select,input{background:#070b15;border:1px solid var(--line2);color:var(--txt);border-radius:7px;
+       padding:8px 10px;font-size:13px;width:100%;font-family:var(--mono)}
+  select:focus,input:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;gap:9px;margin-top:9px}.row>div{flex:1}
+  .row:first-of-type{margin-top:0}
+  button{background:linear-gradient(180deg,var(--accent),#2d6fd6);color:#fff;border:none;border-radius:8px;
+         padding:11px;font-size:12.5px;font-weight:650;cursor:pointer;width:100%;margin-top:13px;letter-spacing:.3px}
+  button:hover{filter:brightness(1.12)}button:disabled{opacity:.45;cursor:wait}
+  button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line2);margin-top:9px}
+  #telemetry{top:70px;right:16px;width:300px;display:none;flex-direction:column;gap:12px}
+  .pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px}
+  .NOMINAL{background:rgba(52,211,153,.16);color:var(--green)}
+  .ELEVATED{background:rgba(251,191,36,.16);color:var(--amber)}
+  .HIGH{background:rgba(244,80,106,.18);color:var(--red)}
+  .CRITICAL{background:var(--red);color:#fff;box-shadow:0 0 12px rgba(244,80,106,.5)}
+  .APPROVED{background:rgba(52,211,153,.2);color:var(--green)}
+  .REJECTED{background:var(--red);color:#fff}
+  .NO_ACTION{background:rgba(116,136,168,.2);color:var(--dim)}
+  .kv{display:flex;justify-content:space-between;align-items:center;padding:6px 0;
+      border-bottom:1px solid rgba(30,42,68,.45);font-size:12px}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--dim);font-size:11px}
+  .kv .v{font-family:var(--mono);text-align:right;font-size:12px}
+  .big{font-size:20px;font-family:var(--mono);font-weight:600;letter-spacing:.5px}
+  .arrow{color:var(--cyan)}
+  .chk{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:11.5px;color:var(--txt)}
+  .mk{width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;
+      font-size:10px;font-weight:800;flex-shrink:0}
+  .mk.ok{background:rgba(52,211,153,.18);color:var(--green)}
+  .mk.no{background:rgba(244,80,106,.2);color:var(--red)}
+  .verdict{text-align:center;padding:12px;border-radius:9px;margin-top:6px;font-weight:700;
+           font-size:13px;letter-spacing:1px}
+  .verdict.APPROVED{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.4);color:var(--green)}
+  .verdict.REJECTED{background:rgba(244,80,106,.12);border:1px solid rgba(244,80,106,.4);color:var(--red)}
+  .loading{color:var(--cyan);font-size:11.5px;padding:10px 0;display:flex;align-items:center;gap:9px}
+  .spin{width:13px;height:13px;border:2px solid rgba(57,212,232,.25);border-top-color:var(--cyan);
+        border-radius:50%;animation:sp .7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .err{color:var(--red);font-size:11.5px;padding:8px 0}
+  .muted{color:var(--faint);font-size:10.5px}
+  #legend{bottom:14px;left:16px;background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
+          border-radius:10px;padding:9px 13px;font-size:10.5px;color:var(--dim);display:flex;gap:16px}
+  .leg{display:flex;align-items:center;gap:6px}
+  .ldot{width:18px;height:3px;border-radius:2px}
+  #hint{bottom:16px;right:18px;font-size:10px;color:var(--faint);font-family:var(--mono);z-index:2;position:fixed}
+  #clock{bottom:14px;left:50%;transform:translateX(-50%);background:var(--panel);backdrop-filter:blur(14px);
+         border:1px solid var(--line);border-radius:10px;padding:9px 20px;display:none;text-align:center}
+  #clock .lab{font-size:9px;color:var(--faint);letter-spacing:2px;text-transform:uppercase}
+  #clock .val{font-size:18px;font-family:var(--mono);color:var(--amber);font-weight:600;margin-top:2px}
+  /* autonomous sequence tracker */
+  #seq{bottom:60px;left:50%;transform:translateX(-50%);background:var(--panel);backdrop-filter:blur(14px);
+       border:1px solid var(--line);border-radius:12px;padding:12px 16px;display:none;
+       max-width:760px;width:calc(100% - 360px)}
+  .seqhd{font-size:9px;letter-spacing:2px;color:var(--faint);text-transform:uppercase;
+         text-align:center;margin-bottom:9px}
+  #seqsteps{display:flex;gap:6px;align-items:stretch}
+  .step{flex:1;background:#070b15;border:1px solid var(--line);border-radius:8px;padding:7px 6px;
+        text-align:center;position:relative;opacity:.38;transition:all .35s}
+  .step .n{font-size:9px;color:var(--faint);font-family:var(--mono)}
+  .step .t{font-size:9.5px;color:var(--dim);margin-top:3px;line-height:1.25;font-weight:500}
+  .step.active{opacity:1;border-color:var(--cyan);box-shadow:0 0 14px rgba(57,212,232,.3);background:rgba(57,212,232,.07)}
+  .step.active .t{color:var(--cyan)}
+  .step.done{opacity:1;border-color:var(--green);background:rgba(52,211,153,.06)}
+  .step.done .t{color:var(--green)}
+  .step.done .n::after{content:' \2713';color:var(--green)}
+  .step.alert{opacity:1;border-color:var(--red);background:rgba(244,80,106,.08)}
+  .step.alert .t{color:var(--red)}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="ov" id="top">
+  <div class="brand">
+    <div class="logo"></div>
+    <div><h1><b>ISDMAAS</b> Mission Console</h1>
+      <div class="tag">Autonomous Collision Avoidance</div></div>
+  </div>
+  <div id="sysstat">
+    <div class="stitem"><span class="led" id="apiled"></span><span id="apitxt">LINK…</span></div>
+    <div class="stitem"><span class="led cy"></span><span id="utc">--:--:-- UTC</span></div>
+  </div>
+</div>
+
+<div class="ov" id="deck">
+  <div class="card">
+    <div class="hd">Primary Asset</div>
+    <label>Enter NORAD ID · name · COSPAR</label>
+    <input id="query" placeholder="25544  ·  ISS  ·  1998-067A" style="margin-bottom:8px">
+    <button class="ghost" onclick="resolveSat()" style="margin-top:0">Resolve &amp; load</button>
+    <div id="resolveMsg" class="muted" style="margin-top:7px"></div>
+    <label style="margin-top:11px">Or pick a configured asset</label>
+    <select id="sat"></select>
+    <button class="ghost" onclick="loadOrbit()">Render orbit</button>
+  </div>
+  <div class="card">
+    <div class="hd">Conjunction Simulator</div>
+    <div class="row">
+      <div><label>Miss · km</label><input id="miss" type="number" value="0.04" step="0.01"></div>
+      <div><label>TCA · h</label><input id="tca" type="number" value="8"></div>
+    </div>
+    <div class="row">
+      <div><label>Mass · kg</label><input id="mass" type="number" value="2300"></div>
+      <div><label>Fuel · kg</label><input id="fuel" type="number" value="5"></div>
+    </div>
+    <button id="planBtn" onclick="runPlan()">&#9654; Assess threat &amp; plan maneuver</button>
+    <button id="autoBtn" class="ghost" onclick="runAuto()" style="border-color:#34d399;color:#34d399">&#9883; AUTONOMOUS MODE &mdash; detect &amp; self-maneuver</button>
+  </div>
+</div>
+
+<div class="ov" id="telemetry">
+  <div class="card" id="telcard">
+    <div class="hd">Decision Telemetry</div>
+    <div id="result"><div class="muted">Run a simulation to populate telemetry.</div></div>
+  </div>
+</div>
+
+<div class="ov" id="legend">
+  <div class="leg"><span class="ldot" style="background:#3d8bff"></span> Primary</div>
+  <div class="leg"><span class="ldot" style="background:#f4506a"></span> Threat</div>
+  <div class="leg"><span class="ldot" style="background:#34d399"></span> Post-maneuver</div>
+  <div class="leg"><span class="ldot" style="background:#3d8bff;opacity:.4"></span> Uncertainty (3&sigma;)</div>
+</div>
+<div class="ov" id="clock"><div class="lab">Time to TCA</div><div class="val" id="clockval">--:--:--</div></div>
+
+<div class="ov" id="seq">
+  <div class="seqhd">Autonomous Sequence</div>
+  <div id="seqsteps"></div>
+</div>
+<div id="hint">drag &middot; rotate &nbsp;&nbsp; scroll &middot; zoom</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const API="http://localhost:8000";
+const RE=6371;
+let scene,camera,renderer,earth,cloudMesh;
+let primaryOrbit,threatOrbit,postOrbit,primaryDot,threatDot,tcaMarker,primaryEllip,threatEllip;
+let primaryTrack=[],threatTrack=[];
+let dragging=false,px=0,py=0,camTheta=0.9,camPhi=1.05,camR=22000,rot=0;
+let tcaSeconds=null,tcaStart=0;
+
+function initScene(){
+  const c=document.getElementById("scene");
+  scene=new THREE.Scene();
+  scene.fog=new THREE.FogExp2(0x04060d,0.0000035);
+  camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,80,400000);
+  renderer=new THREE.WebGLRenderer({canvas:c,antialias:true,alpha:true});
+  renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+
+  earth=new THREE.Mesh(new THREE.SphereGeometry(RE,96,96),
+    new THREE.MeshPhongMaterial({color:0x12365e,emissive:0x06121f,shininess:25,specular:0x2a4a70}));
+  scene.add(earth);
+  cloudMesh=new THREE.Mesh(new THREE.SphereGeometry(RE*1.004,48,36),
+    new THREE.MeshBasicMaterial({color:0x2e5a8a,wireframe:true,transparent:true,opacity:.13}));
+  scene.add(cloudMesh);
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(RE*1.001,24,16),
+    new THREE.MeshBasicMaterial({color:0x1a3a5c,wireframe:true,transparent:true,opacity:.08})));
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(RE*1.06,64,64),
+    new THREE.MeshBasicMaterial({color:0x3d8bff,transparent:true,opacity:.07,side:THREE.BackSide})));
+  scene.add(new THREE.Mesh(new THREE.SphereGeometry(RE*1.14,64,64),
+    new THREE.MeshBasicMaterial({color:0x1a4a8a,transparent:true,opacity:.03,side:THREE.BackSide})));
+
+  scene.add(new THREE.AmbientLight(0x4a5a72,1.0));
+  const sun=new THREE.DirectionalLight(0xfff4e6,1.3);sun.position.set(2,0.6,1.4);scene.add(sun);
+  const rim=new THREE.DirectionalLight(0x3d8bff,0.4);rim.position.set(-1.5,-0.3,-1);scene.add(rim);
+
+  for(const[cnt,r0,sz,col]of[[1800,140000,260,0x6a7a98],[600,90000,420,0x9fb0d0]]){
+    const g=new THREE.BufferGeometry();const a=[];
+    for(let i=0;i<cnt;i++){const t=Math.random()*6.283,p=Math.acos(2*Math.random()-1);
+      a.push(r0*Math.sin(p)*Math.cos(t),r0*Math.sin(p)*Math.sin(t),r0*Math.cos(p));}
+    g.setAttribute("position",new THREE.Float32BufferAttribute(a,3));
+    scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:col,size:sz})));
+  }
+
+  updateCam();animate();
+  addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);});
+  c.addEventListener("mousedown",e=>{dragging=true;px=e.clientX;py=e.clientY});
+  addEventListener("mouseup",()=>dragging=false);
+  addEventListener("mousemove",e=>{if(!dragging)return;
+    camTheta-=(e.clientX-px)*0.005;camPhi=Math.max(0.15,Math.min(2.95,camPhi-(e.clientY-py)*0.005));
+    px=e.clientX;py=e.clientY;updateCam()});
+  c.addEventListener("wheel",e=>{e.preventDefault();camR=Math.max(8800,Math.min(70000,camR+e.deltaY*16));updateCam()},{passive:false});
+}
+function updateCam(){
+  camera.position.set(camR*Math.sin(camPhi)*Math.cos(camTheta),camR*Math.cos(camPhi),
+    camR*Math.sin(camPhi)*Math.sin(camTheta));
+  camera.lookAt(0,0,0);
+}
+function animate(){
+  requestAnimationFrame(animate);
+  rot+=0.0006;earth.rotation.y=rot;cloudMesh.rotation.y=rot*1.05;
+  const t=Date.now()*0.00003;
+  if(primaryDot&&primaryTrack.length)primaryDot.position.copy(pos(primaryTrack,t));
+  if(threatDot&&threatTrack.length)threatDot.position.copy(pos(threatTrack,t+0.5));
+  if(tcaSeconds!==null){
+    const left=Math.max(0,tcaSeconds-(Date.now()-tcaStart)/1000*400);
+    document.getElementById("clockval").textContent=fmt(left);
+  }
+  renderer.render(scene,camera);
+}
+function pos(track,t){const i=Math.floor(((t%1)+1)%1*track.length)%track.length;
+  return new THREE.Vector3(...track[i]);}
+function fmt(s){s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0');}
+
+function drawOrbit(track,color,old,glow){
+  if(old&&old.parent)scene.remove(old);
+  const pts=track.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
+  pts.push(pts[0].clone());
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  const l=new THREE.Line(g,new THREE.LineBasicMaterial({color,transparent:true,opacity:glow?.95:.8}));
+  scene.add(l);return l;
+}
+function mkDot(color,size){const m=new THREE.Mesh(new THREE.SphereGeometry(size||190,18,18),
+  new THREE.MeshBasicMaterial({color}));
+  const halo=new THREE.Mesh(new THREE.SphereGeometry((size||190)*2.2,16,16),
+    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.18}));
+  m.add(halo);scene.add(m);return m;}
+
+// covariance ellipsoid: scaled 3-axis ellipsoid at a position (sized for visibility)
+function mkEllipsoid(centre,color,scale,old){
+  if(old&&old.parent)scene.remove(old);
+  // scale = [along, radial, cross] visual radii in km (exaggerated for legibility)
+  const g=new THREE.SphereGeometry(1,24,18);
+  const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color,wireframe:true,
+    transparent:true,opacity:.32}));
+  m.scale.set(scale[0],scale[1],scale[2]);
+  m.position.set(centre[0],centre[1],centre[2]);
+  scene.add(m);
+  // solid faint inner glow
+  const m2=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color,transparent:true,opacity:.06}));
+  m2.scale.set(scale[0],scale[1],scale[2]);m2.position.copy(m.position);scene.add(m2);
+  m.userData.glow=m2;
+  return m;
+}
+
+function rotatePlane(track,incDeg,raanDeg){
+  const i=incDeg*Math.PI/180,O=raanDeg*Math.PI/180;
+  const ci=Math.cos(i),si=Math.sin(i),cO=Math.cos(O),sO=Math.sin(O);
+  return track.map(([x,y,z])=>{
+    let y1=y*ci-z*si, z1=y*si+z*ci, x1=x;
+    return [x1*cO-y1*sO, x1*sO+y1*cO, z1];
+  });
+}
+
+async function init(){
+  initScene();
+  setInterval(()=>{const d=new Date();
+    document.getElementById("utc").textContent=d.toISOString().substr(11,8)+" UTC";},1000);
+  try{
+    const h=await (await fetch(API+"/health")).json();
+    document.getElementById("apiled").classList.add("on");
+    document.getElementById("apitxt").textContent="LINK ACTIVE";
+    const sats=await (await fetch(API+"/satellites")).json();
+    const sel=document.getElementById("sat");
+    for(const[n,info]of Object.entries(sats)){const o=document.createElement("option");
+      o.value=n;o.textContent=info.name+(info.state_available?"":" \u00b7 no state");sel.appendChild(o);}
+    loadOrbit();
+  }catch(e){document.getElementById("apitxt").textContent="OFFLINE \u00b7 start uvicorn :8000";}
+}
+
+async function loadOrbit(){
+  const norad=document.getElementById("sat").value;
+  try{
+    const d=await (await fetch(API+"/orbit/"+norad+"?points=240")).json();
+    primaryTrack=d.track_km;
+    primaryOrbit=drawOrbit(primaryTrack,0x3d8bff,primaryOrbit,true);
+    if(!primaryDot)primaryDot=mkDot(0x3d8bff,200);
+    if(threatOrbit){scene.remove(threatOrbit);threatOrbit=null;threatTrack=[]}
+    if(postOrbit){scene.remove(postOrbit);postOrbit=null}
+    if(tcaMarker){scene.remove(tcaMarker);tcaMarker=null}
+    if(primaryEllip){scene.remove(primaryEllip);if(primaryEllip.userData.glow)scene.remove(primaryEllip.userData.glow);primaryEllip=null}
+    if(threatEllip){scene.remove(threatEllip);if(threatEllip.userData.glow)scene.remove(threatEllip.userData.glow);threatEllip=null}
+    tcaSeconds=null;document.getElementById("clock").style.display="none";
+    const rmax=Math.max(...primaryTrack.map(p=>Math.hypot(p[0],p[1],p[2])));
+    camR=rmax*3.4;camPhi=1.05;updateCam();
+  }catch(e){console.log(e)}
+}
+
+const sci=x=>Number(x).toExponential(2);
+const pill=r=>'<span class="pill '+r+'">'+r+'</span>';
+
+async function resolveSat(){
+  const q=document.getElementById("query").value.trim();
+  const msg=document.getElementById("resolveMsg");
+  if(!q){msg.textContent="Enter a NORAD id, name, or COSPAR id.";return;}
+  msg.style.color="var(--cyan)";msg.textContent="Resolving \u201c"+q+"\u201d\u2026";
+  try{
+    const d=await (await fetch(API+"/resolve?q="+encodeURIComponent(q))).json();
+    if(d.candidates){
+      msg.style.color="var(--amber)";
+      msg.innerHTML="Multiple matches \u2014 type a more specific name:<br>"+
+        d.candidates.map(c=>c.name+" ("+c.norad+")").join("<br>");
+      return;
+    }
+    if(!d.norad){msg.style.color="var(--red)";msg.textContent=d.detail||"not found";return;}
+    // inject into dropdown + select
+    const sel=document.getElementById("sat");
+    let opt=[...sel.options].find(o=>o.value==d.norad);
+    if(!opt){opt=document.createElement("option");opt.value=d.norad;
+      opt.textContent=d.name+" ("+d.norad+")";sel.appendChild(opt);}
+    sel.value=d.norad;
+    msg.style.color="var(--green)";
+    msg.textContent="\u2713 "+d.name+" \u00b7 NORAD "+d.norad+" \u00b7 matched by "+d.matched_by;
+    await loadOrbit();
+  }catch(e){msg.style.color="var(--red)";msg.textContent="Error: "+e;}
+}
+
+async function runPlan(){
+  const norad=parseInt(document.getElementById("sat").value);
+  const body={primary_norad:norad,synthetic_miss_km:parseFloat(miss.value),
+    tca_hours:parseFloat(tca.value),sat_mass_kg:parseFloat(mass.value),
+    fuel_available_kg:parseFloat(fuel.value)};
+  document.getElementById("telemetry").style.display="flex";
+  const out=document.getElementById("result");
+  out.innerHTML='<div class="loading"><span class="spin"></span>Planning &amp; validating \u00b7 catalog re-screen\u2026</div>';
+  planBtn.disabled=true;
+  try{
+    const resp=await fetch(API+"/maneuver-plan",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const d=await resp.json();
+    if(!resp.ok||d.detail||!d.pre_maneuver){
+      out.innerHTML='<div class="err">'+(d.detail||"error")+'</div>';planBtn.disabled=false;return;}
+
+    if(primaryTrack.length){
+      threatTrack=rotatePlane(primaryTrack,14,8);
+      threatOrbit=drawOrbit(threatTrack,0xf4506a,threatOrbit,true);
+      if(!threatDot)threatDot=mkDot(0xf4506a,180);
+      if(tcaMarker)scene.remove(tcaMarker);
+      tcaMarker=new THREE.Mesh(new THREE.RingGeometry(380,520,32),
+        new THREE.MeshBasicMaterial({color:0xfbbf24,side:THREE.DoubleSide,transparent:true,opacity:.85}));
+      tcaMarker.position.copy(new THREE.Vector3(...primaryTrack[0]));
+      tcaMarker.lookAt(0,0,0);scene.add(tcaMarker);
+      if(isFinite(d.recommendation&&d.recommendation.predicted_new_miss_km)){
+        const lift=1.012;
+        const post=primaryTrack.map(p=>[p[0]*lift,p[1]*lift,p[2]*lift]);
+        postOrbit=drawOrbit(post,0x34d399,postOrbit,true);
+      }
+      tcaSeconds=body.tca_hours*3600;tcaStart=Date.now();
+      document.getElementById("clock").style.display="block";
+    }
+
+    const pm=d.pre_maneuver;let h='';
+    h+='<div class="kv"><span class="k">Threat</span><span class="v">'+d.secondary+'</span></div>';
+    h+='<div class="kv"><span class="k">Miss distance</span><span class="v">'+pm.miss_distance_km.toFixed(3)+' km</span></div>';
+    h+='<div class="kv"><span class="k">Collision Pc</span><span class="v">'+sci(pm.pc)+' &nbsp;'+pill(pm.risk_level)+'</span></div>';
+
+    if(d.verdict==="NO_ACTION"){
+      h+='<div class="kv"><span class="k">Decision</span><span class="v">'+pill("NOMINAL")+' no action</span></div>';
+      out.innerHTML=h;planBtn.disabled=false;
+      tcaSeconds=null;document.getElementById("clock").style.display="none";return;}
+
+    const r=d.recommendation;
+    h+='<div style="height:8px"></div><div class="hd" style="margin:6px 0 8px">Recommended Maneuver</div>';
+    h+='<div class="kv"><span class="k">Burn \u0394v</span><span class="v big">'+r.dv_magnitude_ms.toFixed(3)+' <span style="font-size:11px">m/s</span></span></div>';
+    h+='<div class="kv"><span class="k">Direction</span><span class="v">'+r.direction+'</span></div>';
+    h+='<div class="kv"><span class="k">Execute</span><span class="v">T\u2212'+r.burn_lead_time_h+' h</span></div>';
+    h+='<div class="kv"><span class="k">Propellant</span><span class="v">'+r.fuel_kg.toFixed(3)+' kg</span></div>';
+    h+='<div class="kv"><span class="k">Outcome</span><span class="v">'+r.predicted_new_miss_km.toFixed(1)+' km <span class="arrow">\u2192</span> '+sci(r.predicted_new_pc)+'</span></div>';
+    h+='<div style="height:10px"></div><div class="hd" style="margin:6px 0 8px">Safety Validation</div>';
+    for(const c of d.safety_validation.checks)
+      h+='<div class="chk"><span class="mk '+(c.pass?"ok":"no")+'">'+(c.pass?"\u2713":"\u2715")+'</span>'+
+         c.check.replace(/_/g," ")+'</div>';
+    h+='<div class="verdict '+d.verdict+'">'+d.verdict+'</div>';
+    out.innerHTML=h;
+  }catch(e){out.innerHTML='<div class="err">'+e+'</div>';}
+  planBtn.disabled=false;
+}
+init();
+
+// ===================== AUTONOMOUS MODE =====================
+const SEQ_STEPS=[
+  "Show current orbit","Screen 20,000+ objects","Detect conjunction","Calculate Pc",
+  "Select \u0394v / direction / time","Validate safety","Execute maneuver","Threat resolved"];
+function buildSeq(){
+  const c=document.getElementById("seqsteps");c.innerHTML="";
+  SEQ_STEPS.forEach((t,i)=>{const d=document.createElement("div");d.className="step";d.id="step"+i;
+    d.innerHTML='<div class="n">'+(i+1)+'</div><div class="t">'+t+'</div>';c.appendChild(d);});
+}
+function seqState(i,state){const e=document.getElementById("step"+i);if(!e)return;
+  e.className="step "+state;}
+function setStage(txt,color){
+  let s=document.getElementById("stage");
+  if(!s){s=document.createElement("div");s.id="stage";s.className="ov";
+    s.style.cssText="top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(11,16,28,.92);"+
+      "backdrop-filter:blur(14px);border:1px solid #2c3c5c;border-radius:12px;padding:18px 28px;"+
+      "font-family:var(--mono);font-size:14px;text-align:center;z-index:5;min-width:300px";
+    document.body.appendChild(s);}
+  s.innerHTML='<div style="font-size:10px;letter-spacing:2px;color:#7488a8;text-transform:uppercase;margin-bottom:8px">Autonomous Loop</div>'+
+    '<div style="color:'+(color||'#39d4e8')+'">'+txt+'</div>';
+  s.style.display="block";
+}
+function hideStage(){const s=document.getElementById("stage");if(s)setTimeout(()=>s.style.display="none",1600);}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+async function runAuto(){
+  const norad=parseInt(document.getElementById("sat").value);
+  document.getElementById("telemetry").style.display="flex";
+  const out=document.getElementById("result");out.innerHTML='<div class="muted">Autonomous loop running\u2026</div>';
+  document.getElementById("seq").style.display="block";buildSeq();
+  autoBtn.disabled=true;planBtn.disabled=true;
+  try{
+    // STEP 1 — current orbit
+    seqState(0,"active");setStage("&#128752; Loading current orbit\u2026");
+    await loadOrbit();await sleep(700);seqState(0,"done");
+
+    // STEP 2 — screen catalog  (kick off the real backend call here)
+    seqState(1,"active");setStage("&#128225; Screening catalog for conjunctions\u2026");
+    const body={primary_norad:norad,mode:"auto",
+      inject_miss_km:parseFloat(miss.value),inject_tca_h:parseFloat(tca.value),
+      sat_mass_kg:parseFloat(mass.value),fuel_available_kg:parseFloat(fuel.value)};
+    const callP=fetch(API+"/autonomous",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
+    await sleep(1200);seqState(1,"done");
+
+    const d=await callP;
+    if(d.detail||!d.pre_maneuver){out.innerHTML='<div class="err">'+(d.detail||"error")+'</div>';
+      autoBtn.disabled=false;planBtn.disabled=false;hideStage();return;}
+
+    // STEP 3 — detect conjunction
+    seqState(2,"active");
+    const src=d.detection_source==="real_catalog"?"REAL catalog object":"simulated threat";
+    setStage("&#9888; THREAT DETECTED \u2014 "+d.threat.name+"<br><span style='font-size:11px;color:#7488a8'>"+
+      src+" \u00b7 miss "+d.threat.miss_km+" km</span>","#f4506a");
+    if(primaryTrack.length){
+      threatTrack=rotatePlane(primaryTrack,14,8);
+      threatOrbit=drawOrbit(threatTrack,0xf4506a,threatOrbit,true);
+      if(!threatDot)threatDot=mkDot(0xf4506a,180);
+      if(tcaMarker)scene.remove(tcaMarker);
+      tcaMarker=new THREE.Mesh(new THREE.RingGeometry(380,520,32),
+        new THREE.MeshBasicMaterial({color:0xfbbf24,side:THREE.DoubleSide,transparent:true,opacity:.85}));
+      tcaMarker.position.copy(new THREE.Vector3(...primaryTrack[0]));tcaMarker.lookAt(0,0,0);scene.add(tcaMarker);
+      // covariance ellipsoids at the conjunction point (exaggerated for visibility)
+      const cp=primaryTrack[0];
+      const primaryScale=(d.covariance_source==="phase6_calibrated")?[1400,500,500]:[1800,700,700];
+      primaryEllip=mkEllipsoid(cp,0x3d8bff,primaryScale,primaryEllip);
+      threatEllip=mkEllipsoid([cp[0]*1.0,cp[1]*1.0,cp[2]*1.0],0xf4506a,[2200,900,900],threatEllip);
+      tcaSeconds=d.threat.tca_h*3600;tcaStart=Date.now();
+      document.getElementById("clock").style.display="block";
+    }
+    await sleep(1400);seqState(2,d.action_required?"alert":"done");
+
+    // STEP 4 — calculate Pc
+    seqState(3,"active");setStage("&#129518; Computing collision probability\u2026");
+    await sleep(900);
+    seqState(3,"done");
+
+    if(d.verdict==="NO_ACTION"){
+      setStage("&#10003; Pc below threshold \u2014 monitoring only","#34d399");
+      [4,5,6].forEach(i=>seqState(i,"done"));seqState(7,"done");
+      out.innerHTML='<div class="kv"><span class="k">Threat</span><span class="v">'+d.threat.name+'</span></div>'+
+        '<div class="kv"><span class="k">Pc</span><span class="v">'+sci(d.pre_maneuver.pc)+' '+pill(d.pre_maneuver.risk_level)+'</span></div>'+
+        '<div class="verdict NO_ACTION">MONITORING</div>';
+      hideStage();autoBtn.disabled=false;planBtn.disabled=false;return;}
+
+    const r=d.recommendation;
+    // STEP 5 — select dv / direction / time (autonomous)
+    seqState(4,"active");
+    setStage("&#129518; Selecting \u0394v, direction &amp; burn time\u2026<br>"+
+      "<span style='font-size:11px;color:#7488a8'>"+r.dv_magnitude_ms.toFixed(3)+" m/s "+r.direction+" \u00b7 T\u2212"+r.burn_lead_time_h+" h</span>");
+    await sleep(1500);seqState(4,"done");
+
+    // STEP 6 — validate safety
+    seqState(5,"active");setStage("&#128737; Validating fuel \u00b7 orbit \u00b7 no secondary conjunction\u2026");
+    await sleep(1500);
+    seqState(5,d.verdict==="APPROVED"?"done":"alert");
+
+    // STEP 7 — execute maneuver
+    seqState(6,"active");
+    if(d.verdict==="APPROVED"){
+      setStage("&#9889; EXECUTING MANEUVER \u2014 &#916;v "+r.dv_magnitude_ms.toFixed(3)+" m/s","#34d399");
+      await animateManeuver();
+      const lift=1.012;
+      postOrbit=drawOrbit(primaryTrack.map(p=>[p[0],p[1],p[2]]),0x34d399,postOrbit,true);
+      seqState(6,"done");
+      // STEP 8 — threat resolved
+      seqState(7,"active");
+      setStage("&#10003; THREAT RESOLVED \u2014 new miss "+r.predicted_new_miss_km.toFixed(1)+" km","#34d399");
+      await sleep(900);seqState(7,"done");
+    }else{
+      setStage("&#9888; HELD FOR REVIEW \u2014 safety check failed","#fbbf24");
+      seqState(6,"alert");
+    }
+    hideStage();
+
+    // telemetry panel
+    let h='';
+    h+='<div class="kv"><span class="k">Detection</span><span class="v">'+(d.detection_source==="real_catalog"?"REAL":"SIM")+'</span></div>';
+    h+='<div class="kv"><span class="k">Covariance</span><span class="v">'+(d.covariance_source==="phase6_calibrated"?"CALIBRATED":"generic")+'</span></div>';
+    h+='<div class="kv"><span class="k">Threat</span><span class="v">'+d.threat.name+'</span></div>';
+    h+='<div class="kv"><span class="k">Miss</span><span class="v">'+d.threat.miss_km+' km</span></div>';
+    h+='<div class="kv"><span class="k">Pc</span><span class="v">'+sci(d.pre_maneuver.pc)+' '+pill(d.pre_maneuver.risk_level)+'</span></div>';
+    h+='<div style="height:8px"></div><div class="hd" style="margin:6px 0 8px">Autonomous Maneuver</div>';
+    h+='<div class="kv"><span class="k">Burn &#916;v</span><span class="v big">'+r.dv_magnitude_ms.toFixed(3)+' <span style="font-size:11px">m/s</span></span></div>';
+    h+='<div class="kv"><span class="k">Execute</span><span class="v">T\u2212'+r.burn_lead_time_h+' h</span></div>';
+    h+='<div class="kv"><span class="k">Propellant</span><span class="v">'+r.fuel_kg.toFixed(3)+' kg</span></div>';
+    h+='<div class="kv"><span class="k">Outcome</span><span class="v">'+r.predicted_new_miss_km.toFixed(1)+' km <span class="arrow">\u2192</span> '+sci(r.predicted_new_pc)+'</span></div>';
+    h+='<div style="height:10px"></div><div class="hd" style="margin:6px 0 8px">Safety Validation</div>';
+    for(const c of d.safety_validation.checks)
+      h+='<div class="chk"><span class="mk '+(c.pass?"ok":"no")+'">'+(c.pass?"\u2713":"\u2715")+'</span>'+c.check.replace(/_/g," ")+'</div>';
+    h+='<div class="verdict '+d.verdict+'">'+(d.autonomous_action==="EXECUTED"?"THREAT RESOLVED \u00b7 AUTONOMOUS":d.verdict)+'</div>';
+    out.innerHTML=h;
+  }catch(e){out.innerHTML='<div class="err">'+e+'</div>';hideStage();}
+  autoBtn.disabled=false;planBtn.disabled=false;
+}
+
+async function animateManeuver(){
+  if(!primaryOrbit||!primaryTrack.length)return;
+  const steps=45;const base=primaryTrack.map(p=>[...p]);
+  for(let s=1;s<=steps;s++){
+    const lift=1+0.012*(s/steps);
+    primaryOrbit=drawOrbit(base.map(p=>[p[0]*lift,p[1]*lift,p[2]*lift]),0x3d8bff,primaryOrbit,true);
+    await sleep(18);
+  }
+  primaryTrack=base.map(p=>[p[0]*1.012,p[1]*1.012,p[2]*1.012]);
+}
+</script>
+</body>
+</html>

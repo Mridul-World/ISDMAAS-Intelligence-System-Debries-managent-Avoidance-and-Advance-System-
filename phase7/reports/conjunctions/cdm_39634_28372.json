@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.604442+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 28372,
+    "name": "APRIZESAT 1"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 110.95703426840399,
+  "radial_miss_km": -96.85839445519535,
+  "binormal_miss_km": -46.77985896660251,
+  "pc": 3.4135164812765345e-280,
+  "pc_chan_crosscheck": 2.725810791391103e-255,
+  "pc_methods_agree": true,
+  "mahalanobis": 35.57130523132928,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 0.42616101646084686,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      13.38151910506837,
+      -2.7818386454535085
+    ],
+    [
+      -2.78183886869801,
+      8.514134571618918
+    ]
+  ],
+  "secondary_name": "APRIZESAT 1"
+}

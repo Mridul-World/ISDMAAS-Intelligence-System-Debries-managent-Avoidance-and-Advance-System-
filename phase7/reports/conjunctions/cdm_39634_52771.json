@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.602053+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 52771,
+    "name": "OMNI-L2"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 16.754091567764714,
+  "miss_distance_km": 111.92042865453274,
+  "radial_miss_km": 93.48995428528201,
+  "binormal_miss_km": 61.52886791687559,
+  "pc": 2.241303883291901e-233,
+  "pc_chan_crosscheck": 2.2326976056580023e-233,
+  "pc_methods_agree": true,
+  "mahalanobis": 32.40208753243269,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 6.853813135806778,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      10.574001602458964,
+      2.0774968887127723
+    ],
+    [
+      2.077497052819146,
+      8.750344481319026
+    ]
+  ],
+  "secondary_name": "OMNI-L2"
+}

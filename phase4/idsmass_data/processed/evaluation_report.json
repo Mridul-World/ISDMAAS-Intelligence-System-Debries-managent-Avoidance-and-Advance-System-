@@ -1,0 +1,12 @@
+{
+  "transformer": {
+    "position_error_km": 2777.3496,
+    "mse": 3546025.75
+  },
+  "sgp4_persistence_baseline": {
+    "position_error_km": 7066.2412,
+    "mse": 8326720.0
+  },
+  "improvement_over_baseline_pct": 60.7,
+  "test_samples": 7531
+}

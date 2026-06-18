@@ -1,0 +1,61 @@
+{
+  "pre_maneuver": {
+    "miss_distance_km": 0.020000000000436557,
+    "pc": 0.05563013550735202,
+    "risk_level": "CRITICAL",
+    "tca_s_from_epoch": 0.0
+  },
+  "action_required": true,
+  "options": [
+    {
+      "burn_lead_time_h": 0.75,
+      "dv_ms": 0.06828390633017989,
+      "direction": "prograde",
+      "new_miss_km": 0.5534611216498866,
+      "new_pc": 9.99999720935507e-07,
+      "new_risk": "ELEVATED",
+      "fuel_kg": 0.036080535958178395
+    },
+    {
+      "burn_lead_time_h": 1.5,
+      "dv_ms": 0.034141953619837295,
+      "direction": "prograde",
+      "new_miss_km": 0.5534611290119822,
+      "new_pc": 9.999994297643847e-07,
+      "new_risk": "ELEVATED",
+      "fuel_kg": 0.01804041096346687
+    },
+    {
+      "burn_lead_time_h": 3.0,
+      "dv_ms": 0.017070977264666,
+      "direction": "prograde",
+      "new_miss_km": 0.5534611437361733,
+      "new_pc": 9.999988474223854e-07,
+      "new_risk": "ELEVATED",
+      "fuel_kg": 0.00902024140834179
+    },
+    {
+      "burn_lead_time_h": 6.0,
+      "dv_ms": 0.008535488632333,
+      "direction": "prograde",
+      "new_miss_km": 0.5534611437361733,
+      "new_pc": 9.999988474223854e-07,
+      "new_risk": "ELEVATED",
+      "fuel_kg": 0.004510129625767689
+    }
+  ],
+  "recommendation": {
+    "dv_rtn_ms": [
+      0.0,
+      0.008535488632333,
+      0.0
+    ],
+    "dv_magnitude_ms": 0.008535488632333,
+    "direction": "prograde",
+    "burn_lead_time_h": 6.0,
+    "fuel_kg": 0.004510129625767689,
+    "predicted_new_miss_km": 0.5534611437361733,
+    "predicted_new_pc": 9.999988474223854e-07,
+    "predicted_new_risk": "ELEVATED"
+  }
+}

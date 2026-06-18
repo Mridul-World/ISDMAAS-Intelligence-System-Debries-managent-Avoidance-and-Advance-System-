@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.613696+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 27844,
+    "name": "CUTE-1 (CO-55)"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 181.32934372543835,
+  "radial_miss_km": 77.7180859896324,
+  "binormal_miss_km": 137.44095796893365,
+  "pc": 0.0,
+  "pc_chan_crosscheck": 0.0,
+  "pc_methods_agree": true,
+  "mahalanobis": 640.0361668378463,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 0.06319057278123567,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      5.242052032297318,
+      -0.033882133373501676
+    ],
+    [
+      -0.03388208343603754,
+      0.04680070707326842
+    ]
+  ],
+  "secondary_name": "CUTE-1 (CO-55)"
+}

@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.598205+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 51284,
+    "name": "LUDI TANCE 1-01A (L-SA*)"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 1370.33857714878,
+  "miss_distance_km": 66.54566823222304,
+  "radial_miss_km": -31.32147195833457,
+  "binormal_miss_km": -58.713638576027286,
+  "pc": 1.3122615318402238e-154,
+  "pc_chan_crosscheck": 1.2411687940152954e-154,
+  "pc_methods_agree": true,
+  "mahalanobis": 26.28074992223825,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 0.06148283954639301,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      1.6915135053904504,
+      3.924905429427288
+    ],
+    [
+      3.9249055932819594,
+      10.868355696409315
+    ]
+  ],
+  "secondary_name": "LUDI TANCE 1-01A (L-SA*)"
+}

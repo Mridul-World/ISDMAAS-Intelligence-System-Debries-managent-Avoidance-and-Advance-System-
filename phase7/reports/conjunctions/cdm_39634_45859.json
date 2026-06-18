@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.594340+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 45859,
+    "name": "SHIYAN-6 02 (SY-6 02)"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 69.80240924125685,
+  "radial_miss_km": -21.733273852056712,
+  "binormal_miss_km": -59.0032657579547,
+  "pc": 1.415758058847956e-92,
+  "pc_chan_crosscheck": 1.4080590918924024e-92,
+  "pc_methods_agree": true,
+  "mahalanobis": 20.033969019442736,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 0.4923025532334192,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      13.234457509039572,
+      3.9887099085017654
+    ],
+    [
+      3.988710129355418,
+      8.726224396416068
+    ]
+  ],
+  "secondary_name": "SHIYAN-6 02 (SY-6 02)"
+}

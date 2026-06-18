@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.598205+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 41923,
+    "name": "IRIDIUM 114"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 159.81699925498992,
+  "radial_miss_km": 20.45056667504748,
+  "binormal_miss_km": 81.15559578908693,
+  "pc": 9.266916988575969e-171,
+  "pc_chan_crosscheck": 3.5998875807401953e-150,
+  "pc_methods_agree": true,
+  "mahalanobis": 27.604133070122675,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 10.476545129902517,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      7.071714461630812,
+      2.2372265098930875
+    ],
+    [
+      2.2372267574983455,
+      8.644017843437918
+    ]
+  ],
+  "secondary_name": "IRIDIUM 114"
+}

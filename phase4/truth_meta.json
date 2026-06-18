@@ -1,0 +1,22 @@
+{
+  "config": {
+    "DATASET": "idsmass_data/processed/historical_trajectory_dataset_v2.csv",
+    "TLE_CSV": "idsmass_data/raw/spacetrack/historical_tles.csv",
+    "SAVE_DIR": ".",
+    "SEQ": 30,
+    "HORIZON_DAYS": 1.0,
+    "DT": 120.0,
+    "MAX_PER_SAT": 1500,
+    "TRAIN_FRACTION": 0.8,
+    "USE_DRAG": true,
+    "SEED": 42
+  },
+  "n_train": 9600,
+  "n_val": 2400,
+  "sgp4_vs_truth_km": {
+    "median": 39.08812713623047,
+    "mean": 45.35173797607422,
+    "p90": 66.38447570800781,
+    "rmse": 48.45490264892578
+  }
+}

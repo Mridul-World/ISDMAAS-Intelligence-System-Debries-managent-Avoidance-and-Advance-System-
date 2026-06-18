@@ -1,0 +1,34 @@
+{
+  "created_utc": "2026-06-13T12:50:49.602053+00:00",
+  "primary": {
+    "norad": 39634,
+    "name": "SENTINEL-1A"
+  },
+  "secondary": {
+    "norad": 40137,
+    "name": "CHUANGXIN 1-04 (CX-1-04)"
+  },
+  "screening_epoch_utc": "2026-06-16T12:44:50.100576+00:00",
+  "tca_s_from_epoch": 0.0,
+  "miss_distance_km": 129.78545801821056,
+  "radial_miss_km": -16.679829403998944,
+  "binormal_miss_km": 92.96566829157808,
+  "pc": 8.354481529985566e-247,
+  "pc_chan_crosscheck": 5.108752783311081e-223,
+  "pc_methods_agree": true,
+  "mahalanobis": 33.34350110811241,
+  "hbr_km": 0.02,
+  "relative_speed_kms": 0.7355236812759689,
+  "risk_level": "NOMINAL",
+  "encounter_plane_cov_km2": [
+    [
+      12.64912992200497,
+      -5.8059172888481445
+    ],
+    [
+      -5.805917539349439,
+      9.342987662538356
+    ]
+  ],
+  "secondary_name": "CHUANGXIN 1-04 (CX-1-04)"
+}

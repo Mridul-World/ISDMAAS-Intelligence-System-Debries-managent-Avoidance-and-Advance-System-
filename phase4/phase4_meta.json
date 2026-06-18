@@ -1,0 +1,51 @@
+{
+  "config": {
+    "DATASET_PATH": "C:\\Work_place\\projects\\isdmaas\\phase4\\idsmass_data\\processed\\historical_trajectory_dataset_v2.csv",
+    "TLE_PATH": "C:\\Work_place\\projects\\isdmaas\\phase4\\idsmass_data\\raw\\spacetrack\\historical_tles.csv",
+    "SAVE_DIR": "C:\\Work_place\\projects\\isdmaas\\phase4",
+    "SEQUENCE_LENGTH": 30,
+    "RESAMPLE_HOURS": 6,
+    "PREDICTION_HORIZON_DAYS": 21,
+    "HORIZON_TOL_HOURS": 24,
+    "TRAIN_FRACTION": 0.8,
+    "MIN_VALID_BASELINE_FRAC": 0.5
+  },
+  "horizon_steps": 84,
+  "shapes": {
+    "X_train": [
+      96019,
+      30,
+      23
+    ],
+    "y_train": [
+      96019,
+      6
+    ],
+    "X_val": [
+      23270,
+      30,
+      23
+    ],
+    "y_val": [
+      23270,
+      6
+    ],
+    "baseline_train": [
+      96019,
+      6
+    ],
+    "baseline_val": [
+      23270,
+      6
+    ]
+  },
+  "baseline_pos_error_km": {
+    "train_mean": 333.67508457718066,
+    "train_median": 6.976140975952148,
+    "val_mean": 918.8903591323959,
+    "val_median": 45.69876289367676,
+    "val_rmse": 5400.72900390625
+  },
+  "n_gap_skipped": 740,
+  "n_bad_baseline": 6
+}

@@ -1,0 +1,21 @@
+{
+  "event": "aeolus_starlink_2019",
+  "title": "ESA Aeolus \u00d7 Starlink-44 near-miss (avoided)",
+  "outcome": "AVOIDED (ESA maneuvered)",
+  "isdmaas": {
+    "miss_distance_km": 256.9617943976567,
+    "pc": 0.0,
+    "risk_level": "NOMINAL",
+    "mahalanobis": 1493.9065095514782,
+    "relative_speed_kms": 14.77176443886764
+  },
+  "tca_utc": "2019-09-02T21:50:00+00:00",
+  "recommendation": "NO MANEUVER \u2014 Pc below action threshold.",
+  "documented": {
+    "collision_probability": 0.001,
+    "esa_threshold": 0.0001,
+    "maneuver": "orbit raise, ~half an orbit before TCA, thruster burns 10:14/10:17/10:18 UTC",
+    "lead_time": "decision made the day before; detected ~5 days ahead",
+    "note": "First ESA collision-avoidance maneuver against an active constellation satellite. ESA raised Aeolus; coordination with SpaceX failed (paging bug)."
+  }
+}
