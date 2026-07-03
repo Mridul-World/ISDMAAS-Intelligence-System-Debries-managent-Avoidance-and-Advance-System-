@@ -1,0 +1,40 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# ---- Large data (DO NOT COMMIT — external drive backup only) ----
+data/esa_pod/
+data/*.EOF
+data/*.SP3
+*.csv.gz
+socrates_dump.html
+
+# ---- Trained model weights (use Git LFS or exclude; see README §Repo Hygiene) ----
+models/**/*.pt
+models/**/*.pth
+models/**/*.h5
+models/**/*.ckpt
+
+# ---- Secrets / credentials ----
+.env
+*_credentials.json
+space_track_login.txt
+
+# ---- Backups made by patch scripts ----
+*.bak
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Generated/output artifacts (regenerate, don't version) ----
+*.pdf
+page-*.jpg
+test_active.txt
+test_debris.txt

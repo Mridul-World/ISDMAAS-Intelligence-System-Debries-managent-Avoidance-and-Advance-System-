@@ -7,6 +7,7 @@ Inputs : TLE/SGP4-derived features ONLY (deployable — at inference time you
 
 Run once: downloads + dataset + tensors are persisted; later phases reuse them.
 """
+import os
 from datetime import datetime, timezone
 
 # ---------------------------------------------------------------- fleet
@@ -39,7 +40,10 @@ CFG = {
     "SEQ": 30,
     "N_FEATURES": 23,
     "FEATURE_STEP_S": 600,        # 10-min grid
-    "HORIZON_S": 259200,           # 1-day prediction horizon
+    # Prediction horizon. Defaults to 1 day (86400 s). The multi-horizon
+    # evaluation overrides this per run via the ISDMAAS_HORIZON_S env var
+    # (e.g. 21600=6h, 43200=12h, 86400=1d, 259200=3d, 604800=7d).
+    "HORIZON_S": int(os.environ.get("ISDMAAS_HORIZON_S", 86400)),
     "TRAIN_FRACTION": 0.8,        # chronological split PER SATELLITE
     "MAX_WINDOWS_PER_SAT": 20000, # uniform subsample cap (memory control)
     "SEED": 42,

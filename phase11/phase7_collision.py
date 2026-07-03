@@ -137,7 +137,7 @@ def pc_chan(miss_2d, C_2d, hbr, terms=20):
 
 
 # ---------------------------------------------------------------- secondary covariance model
-def secondary_covariance_rtn(prop_time_s, base_sigma_km=(0.05, 0.5, 0.05),
+def secondary_covariance_rtn(prop_time_s, base_sigma_km=(0.3, 0.5, 0.3),
                              growth_along_km_per_day=2.0):
     """
     Analytic covariance growth for a secondary (debris) propagated by SGP4.
@@ -147,8 +147,8 @@ def secondary_covariance_rtn(prop_time_s, base_sigma_km=(0.05, 0.5, 0.05),
     days = prop_time_s / 86400.0
     sr, st, sn = base_sigma_km
     st = st + growth_along_km_per_day * days
-    sr = sr + 0.1 * days
-    sn = sn + 0.1 * days
+    sr = sr + 0.3 * days
+    sn = sn + 0.3 * days
     return np.diag(np.array([sr, st, sn]) ** 2)
 
 

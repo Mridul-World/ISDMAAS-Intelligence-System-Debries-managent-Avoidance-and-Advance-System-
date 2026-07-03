@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+numpy
+requests
+sgp4
+matplotlib
+python-multipart

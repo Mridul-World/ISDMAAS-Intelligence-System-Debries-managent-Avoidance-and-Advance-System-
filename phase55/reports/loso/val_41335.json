@@ -1,0 +1,47 @@
+{
+  "truth_source": "REAL ESA POD precise ephemeris (AUX_POEORB), TEME",
+  "n_val": 19963,
+  "systems": {
+    "sgp4": {
+      "position_error_km": {
+        "rmse": 2.2630398273468018,
+        "median": 0.5676237940788269,
+        "p90": 2.130972385406494,
+        "p99": 10.64401912689209,
+        "mean": 1.1179550886154175
+      },
+      "kepler_compliance_vs_truth": {
+        "d_energy_km2s2_mean": 0.00016588086145929992,
+        "d_ang_momentum_pct_mean": 0.00029951331089250743,
+        "d_period_s_mean": 0.05418187752366066
+      },
+      "per_satellite_rmse_km": {
+        "41335": 2.2630398273468018
+      }
+    },
+    "physics_ml": {
+      "position_error_km": {
+        "rmse": 2.0570504665374756,
+        "median": 0.4435112774372101,
+        "p90": 1.5310258865356445,
+        "p99": 10.155561447143555,
+        "mean": 0.9414139986038208
+      },
+      "kepler_compliance_vs_truth": {
+        "d_energy_km2s2_mean": 0.0007619401440024376,
+        "d_ang_momentum_pct_mean": 0.0013740535359829664,
+        "d_period_s_mean": 0.249202698469162
+      },
+      "per_satellite_rmse_km": {
+        "41335": 2.0570504665374756
+      },
+      "improvement_vs_sgp4_pct": {
+        "rmse": 9.102330339931708,
+        "median": 21.86527730801593,
+        "p90": 28.153649619274944,
+        "p99": 4.589034216543708
+      },
+      "worse_than_sgp4_fraction": 0.37479336773030103
+    }
+  }
+}

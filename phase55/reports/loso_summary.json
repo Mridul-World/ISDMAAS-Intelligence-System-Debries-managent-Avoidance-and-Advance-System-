@@ -1,0 +1,40 @@
+{
+  "generated": "2026-06-25T17:53:59.013715",
+  "rows": [
+    {
+      "norad": 39634,
+      "name": "SENTINEL-1A",
+      "sgp4_rmse_km": 2.3224704265594482,
+      "model_rmse_km": 2.1720919609069824,
+      "improvement_pct": 6.47493565182827
+    },
+    {
+      "norad": 40697,
+      "name": "SENTINEL-2A",
+      "sgp4_rmse_km": 2.3394782543182373,
+      "model_rmse_km": 2.1647212505340576,
+      "improvement_pct": 7.4699135784490025
+    },
+    {
+      "norad": 42063,
+      "name": "SENTINEL-2B",
+      "sgp4_rmse_km": 2.7135732173919678,
+      "model_rmse_km": 2.5402991771698,
+      "improvement_pct": 6.385456604288818
+    },
+    {
+      "norad": 41335,
+      "name": "SENTINEL-3A",
+      "sgp4_rmse_km": 2.2630398273468018,
+      "model_rmse_km": 2.0570504665374756,
+      "improvement_pct": 9.102330339931711
+    },
+    {
+      "norad": 43437,
+      "name": "SENTINEL-3B",
+      "sgp4_rmse_km": 1.907130479812622,
+      "model_rmse_km": 1.7618274688720703,
+      "improvement_pct": 7.6189339155665925
+    }
+  ]
+}

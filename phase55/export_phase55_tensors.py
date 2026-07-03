@@ -17,6 +17,11 @@ p99 of the clean error distribution is ~18 km, so 25 km keeps the honest tail.)
 
 Split: chronological 80/20 PER SATELLITE (no temporal leakage, every
 satellite represented in both splits).
+
+LOSO MODE: if ISDMAAS_HOLDOUT_NORAD is set, that satellite contributes ZERO
+windows to training and becomes the ENTIRE validation set (leave-one-satellite-
+out); the other satellites contribute all their windows to training. Without the
+env var, behavior is identical to the standard chronological split.
 """
 import os, json, joblib
 import numpy as np
@@ -83,14 +88,27 @@ def main():
     Xs, ys, bs, rs = Xs[keep], ys[keep], bs[keep], rs[keep]
     ags, sat, ends = ags[keep], sat[keep], ends[keep]
 
-    # chronological split PER satellite
+    # chronological split PER satellite — with optional LOSO holdout.
+    holdout = os.environ.get("ISDMAAS_HOLDOUT_NORAD")
+    holdout = int(holdout) if holdout else None
     tr = np.zeros(len(Xs), bool)
     for s in np.unique(sat):
         m = np.where(sat == s)[0]
+        if holdout is not None and int(s) == holdout:
+            continue                                   # held-out sat -> all validation
         m = m[np.argsort(ends[m])]
-        tr[m[:int(c["TRAIN_FRACTION"] * len(m))]] = True
+        if holdout is not None:
+            tr[m] = True                               # use ALL of the 4 training sats
+        else:
+            tr[m[:int(c["TRAIN_FRACTION"] * len(m))]] = True
     va = ~tr
-    print(f"train {tr.sum()}  val {va.sum()}")
+    if holdout is not None:
+        va = (sat == holdout)                          # validation = held-out sat only
+        tr = ~va & tr
+        print(f"LOSO holdout NORAD {holdout}: train {tr.sum()} (4 sats)  "
+              f"val {va.sum()} (held-out only)")
+    else:
+        print(f"train {tr.sum()}  val {va.sum()}")
 
     sc = StandardScaler().fit(Xs[tr].reshape(-1, c["N_FEATURES"]))
     joblib.dump(sc, os.path.join(c["TENSOR_DIR"], "feature_scaler.pkl"))
@@ -108,6 +126,7 @@ def main():
     err = np.linalg.norm(bs[va, :3] - ys[va, :3], axis=1)
     meta = {"config": dict(c), "n_train": int(tr.sum()), "n_val": int(va.sum()),
             "satellites": [int(s) for s in np.unique(sat)],
+            "holdout_norad": holdout,
             "outlier_filter_km": OUTLIER_KM,
             "n_outliers_dropped": n_drop,
             "outliers_dropped_per_satellite": per_sat_drop,

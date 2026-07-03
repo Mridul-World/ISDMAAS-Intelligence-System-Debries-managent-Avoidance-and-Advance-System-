@@ -42,3 +42,10 @@ docker run -p 8000:8000 -v /path/to/isdmaas/phase55:/data/phase55 isdmaas
 The maneuver proposer is isolated in `propose_maneuver()`. Swap the rule-based
 Phase-8 planner for an RL policy there; Phase-10 safety validation still gates
 every output unchanged.
+
+
+cd C:\Work_place\projects\isdmaas\phase11
+historical_events.py
+python debris_data.py sync          # fetch real debris (one time)
+uvicorn phase11_api:app --port 8000 # terminal 1
+python -m http.server 8080          # terminal 2

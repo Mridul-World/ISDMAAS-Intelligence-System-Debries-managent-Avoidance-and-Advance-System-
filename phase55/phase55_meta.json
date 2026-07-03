@@ -13,13 +13,13 @@
     "SEQ": 30,
     "N_FEATURES": 23,
     "FEATURE_STEP_S": 600,
-    "HORIZON_S": 259200,
+    "HORIZON_S": 86400,
     "TRAIN_FRACTION": 0.8,
     "MAX_WINDOWS_PER_SAT": 20000,
     "SEED": 42
   },
-  "n_train": 75883,
-  "n_val": 18974,
+  "n_train": 79800,
+  "n_val": 17265,
   "satellites": [
     39634,
     40697,
@@ -27,22 +27,23 @@
     42063,
     43437
   ],
+  "holdout_norad": 43437,
   "outlier_filter_km": 25.0,
-  "n_outliers_dropped": 1876,
+  "n_outliers_dropped": 244,
   "outliers_dropped_per_satellite": {
-    "39634": 199,
-    "40697": 530,
-    "41335": 299,
-    "42063": 804,
+    "39634": 44,
+    "40697": 1,
+    "41335": 37,
+    "42063": 118,
     "43437": 44
   },
   "truth_source": "ESA POD AUX_POEORB (real precise ephemeris, TEME)",
   "feature_source": "TLE/SGP4-derived states (deployable)",
   "sgp4_vs_truth_km_val": {
-    "median": 1.6909351348876953,
-    "mean": 4.170007705688477,
-    "p90": 11.975130081176758,
-    "p99": 22.36412811279297,
-    "rmse": 6.669504642486572
+    "median": 0.609024167060852,
+    "mean": 1.1080889701843262,
+    "p90": 2.5909173488616943,
+    "p99": 8.030308723449707,
+    "rmse": 1.907130479812622
   }
 }
