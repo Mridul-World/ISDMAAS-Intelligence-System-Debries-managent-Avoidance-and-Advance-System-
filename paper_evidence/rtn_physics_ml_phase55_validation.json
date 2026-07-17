@@ -1,0 +1,23 @@
+{
+  "truth_source": "REAL ESA POD precise ephemeris (AUX_POEORB)",
+  "baseline_sgp4": {
+    "rmse": 1.907130479812622,
+    "median": 0.609024167060852,
+    "p90": 2.5909173488616943,
+    "p99": 8.030308723449707,
+    "trimmed_rmse": 1.6577825546264648
+  },
+  "model": {
+    "rmse": 1.7618274688720703,
+    "median": 0.3858865201473236,
+    "p90": 2.1993393898010254,
+    "p99": 7.890872955322266,
+    "trimmed_rmse": 1.4989542961120605,
+    "epoch": 21
+  },
+  "variant": "rtn_physics_ml_phase55",
+  "improvement_pct": {
+    "rmse": 7.618933915566595,
+    "median": 36.63855376879209
+  }
+}

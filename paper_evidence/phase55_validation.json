@@ -1,0 +1,71 @@
+{
+  "truth_source": "REAL ESA POD precise ephemeris (AUX_POEORB), TEME",
+  "n_val": 17265,
+  "systems": {
+    "sgp4": {
+      "position_error_km": {
+        "rmse": 1.907130479812622,
+        "median": 0.609024167060852,
+        "p90": 2.5909173488616943,
+        "p99": 8.030308723449707,
+        "mean": 1.1080889701843262
+      },
+      "kepler_compliance_vs_truth": {
+        "d_energy_km2s2_mean": 0.00019514634914230555,
+        "d_ang_momentum_pct_mean": 0.0003540852339938283,
+        "d_period_s_mean": 0.06338281184434891
+      },
+      "per_satellite_rmse_km": {
+        "43437": 1.907130479812622
+      }
+    },
+    "pure_ml": {
+      "position_error_km": {
+        "rmse": 1.8508358001708984,
+        "median": 0.6247454881668091,
+        "p90": 2.367379903793335,
+        "p99": 7.941710472106934,
+        "mean": 1.095495581626892
+      },
+      "kepler_compliance_vs_truth": {
+        "d_energy_km2s2_mean": 0.0010159282246604562,
+        "d_ang_momentum_pct_mean": 0.0018327635480090976,
+        "d_period_s_mean": 0.3319336473941803
+      },
+      "per_satellite_rmse_km": {
+        "43437": 1.8508358001708984
+      },
+      "improvement_vs_sgp4_pct": {
+        "rmse": 2.9518001121378257,
+        "median": -2.5813952805564533,
+        "p90": 8.627733538724014,
+        "p99": 1.103298196793523
+      },
+      "worse_than_sgp4_fraction": 0.5559223863307269
+    },
+    "physics_ml": {
+      "position_error_km": {
+        "rmse": 1.8508373498916626,
+        "median": 0.6246737837791443,
+        "p90": 2.367379903793335,
+        "p99": 7.941779613494873,
+        "mean": 1.0954934358596802
+      },
+      "kepler_compliance_vs_truth": {
+        "d_energy_km2s2_mean": 0.0010158595396205783,
+        "d_ang_momentum_pct_mean": 0.0018326322315260768,
+        "d_period_s_mean": 0.3319103717803955
+      },
+      "per_satellite_rmse_km": {
+        "43437": 1.8508373498916626
+      },
+      "improvement_vs_sgp4_pct": {
+        "rmse": 2.9517188528437988,
+        "median": -2.5696216282873108,
+        "p90": 8.627733538724014,
+        "p99": 1.1024371914409192
+      },
+      "worse_than_sgp4_fraction": 0.5559223863307269
+    }
+  }
+}
