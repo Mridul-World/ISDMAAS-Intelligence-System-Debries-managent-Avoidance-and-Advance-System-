@@ -1,7 +1,7 @@
 # ISDMAAS
 ### Intelligent Satellite Debris Management & Autonomous Avoidance System
 
-**Status:** Validated prototype (TRL 4–5) · **Owner:** Mridul Gupta (Zyton) · **Last updated:** 2026-06
+**Status:** Validated prototype (TRL 4–5) · **Owner:** Mridul Gupta  · **Last updated:** 2026-06
 
 A decision-support system for satellite collision avoidance. Improves orbit prediction over the SGP4 baseline using a residual-correction Transformer, computes collision probability via a two-tier engine, and recommends minimum-fuel avoidance maneuvers — all running on public tracking data, with an architecture ready to ingest real operator CDM data.
 
@@ -164,4 +164,4 @@ If referencing this work academically, see `outputs/ISDMAAS_IEEE_Paper.docx` for
 
 ## 10. Contact
 
-Mridul Gupta · Zyton · [email]
+Mridul Gupta · [mridul1735@gmail.com]
