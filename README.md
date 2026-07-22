@@ -158,7 +158,7 @@ See `outputs/ISDMAAS_Pilot_Proposal.docx` for the concrete ask, and `docs/techni
 
 ## 9. Citation
 
-If referencing this work academically, see `outputs/ISDMAAS_IEEE_Paper.docx` for the formal citation and methodology writeup.
+If referencing this work academically, see `outputs/ISDMAAS_Paper.docx` for the formal citation and methodology writeup.
 
 ---
 
