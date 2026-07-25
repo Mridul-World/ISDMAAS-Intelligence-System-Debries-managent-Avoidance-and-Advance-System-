@@ -1,3 +1,4 @@
+<img width="1919" height="994" alt="Screenshot 2026-07-25 195920" src="https://github.com/user-attachments/assets/57422c70-a70f-4d3c-b46e-f2cb5abe9525" />
 # ISDMAAS
 ### Intelligent Satellite Debris Management & Autonomous Avoidance System
 
@@ -165,3 +166,4 @@ If referencing this work academically, see `outputs/ISDMAAS_Paper.docx` for the 
 ## 10. Contact
 
 Mridul Gupta · [mridul1735@gmail.com]
+link :http://3.107.190.182:8080/dashboard.html
