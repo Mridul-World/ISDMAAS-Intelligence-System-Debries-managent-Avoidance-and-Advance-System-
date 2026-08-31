@@ -1,0 +1,61 @@
+{
+  "note": "Every figure below is measured on the LAST half of the validation set. The blend weight and shrinkage factors were fitted on the first half only, so no reported number was tuned on the data it scores.",
+  "n_calibration": 8632,
+  "n_test": 8633,
+  "sgp4_baseline_test": {
+    "rmse_km": 2.121737480163574,
+    "median_km": 0.6553518176078796,
+    "p90_km": 2.599350690841675,
+    "p99_km": 9.687623023986816,
+    "mean_km": 1.2133313417434692
+  },
+  "models": {
+    "physics_ml": {
+      "rmse_km": 2.0511245727539062,
+      "median_km": 0.6489441990852356,
+      "p90_km": 2.329197645187378,
+      "p99_km": 9.356474876403809,
+      "mean_km": 1.1750494241714478,
+      "rmse_pct": 3.3280699459682483,
+      "median_pct": 0.9777372016808727,
+      "p90_pct": 10.393097268719087
+    },
+    "pure_ml": {
+      "rmse_km": 2.0511207580566406,
+      "median_km": 0.6490193009376526,
+      "p90_km": 2.3292765617370605,
+      "p99_km": 9.356346130371094,
+      "mean_km": 1.1750487089157104,
+      "rmse_pct": 3.3282497371677433,
+      "median_pct": 0.9662774253593409,
+      "p90_pct": 10.390061258612382
+    },
+    "ensemble (w=1.00)": {
+      "rmse_km": 2.0511245727539062,
+      "median_km": 0.6489441990852356,
+      "p90_km": 2.329197645187378,
+      "p99_km": 9.356474876403809,
+      "mean_km": 1.1750494241714478,
+      "rmse_pct": 3.3280699459682483,
+      "median_pct": 0.9777372016808727,
+      "p90_pct": 10.393097268719087
+    },
+    "ensemble + shrinkage": {
+      "rmse_km": 2.029339551925659,
+      "median_km": 0.5412320494651794,
+      "p90_km": 2.408567190170288,
+      "p99_km": 9.354164123535156,
+      "mean_km": 1.1035319566726685,
+      "rmse_pct": 4.354823775408434,
+      "median_pct": 17.41351211312,
+      "p90_pct": 7.339659913669083
+    }
+  },
+  "ensemble_weight": 1.0,
+  "shrinkage_alpha_rtn": [
+    -0.539272665977478,
+    1.546985387802124,
+    -1.017675757408142
+  ],
+  "best_variant": "ensemble + shrinkage"
+}

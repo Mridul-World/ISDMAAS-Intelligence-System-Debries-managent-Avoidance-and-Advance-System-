@@ -18,11 +18,52 @@ Zero external deps (sqlite3 is stdlib). DB file: isdmaas_ops.db next to this fil
 import os, sqlite3, threading
 from datetime import datetime, timezone
 
-_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "isdmaas_ops.db")
+def _db_path():
+    """
+    Resolve the operational database location.
+
+    It lives under the configured data directory, which is gitignored. The
+    previous location was next to this module inside the repository, so an
+    operator's registered element-set history was one `git add .` away from
+    being published.
+    """
+    try:
+        from isdmaas_core.config import get_settings
+
+        return str(get_settings().ops_db)
+    except Exception:
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "data", "isdmaas_ops.db"
+        )
+
+def _migrate_legacy_db(target):
+    """
+    Move a pre-existing database from the old in-repo location.
+
+    The operational history — every element set an operator uploaded, every
+    screening run — is real data. Repointing the path must not silently orphan
+    it, so the old file is copied across once if the new location is empty.
+    """
+    legacy = os.path.join(os.path.dirname(os.path.abspath(__file__)), "isdmaas_ops.db")
+    if os.path.exists(target) or not os.path.exists(legacy):
+        return
+    try:
+        import shutil
+
+        os.makedirs(os.path.dirname(target) or ".", exist_ok=True)
+        shutil.copy2(legacy, target)
+    except OSError:
+        pass
+
+
+_DB = _db_path()
+_migrate_legacy_db(_DB)
 _LOCK = threading.Lock()
 
 def _conn():
-    c = sqlite3.connect(_DB)
+    os.makedirs(os.path.dirname(_DB) or ".", exist_ok=True)
+    c = sqlite3.connect(_DB, timeout=15.0)
+    c.execute("PRAGMA journal_mode=WAL")
     c.execute("""CREATE TABLE IF NOT EXISTS tle_history(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         norad TEXT, name TEXT, owner TEXT,

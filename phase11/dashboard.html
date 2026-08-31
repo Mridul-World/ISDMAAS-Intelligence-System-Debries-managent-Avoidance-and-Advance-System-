@@ -3,244 +3,152 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!--
+  Content-Security-Policy.
+
+  Everything the console runs is served from this origin: the two front-end
+  libraries are vendored under vendor/, all script lives in console.js, and all
+  style in console.css. That means no 'unsafe-inline' anywhere, and no
+  third-party script origin at all — a supply-chain compromise of a CDN cannot
+  reach this page.
+
+  connect-src lists the API. Deployed properly the console and the API share an
+  origin and 'self' alone is enough; the localhost entries are what make a local
+  two-terminal development setup work without weakening the deployed policy.
+-->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'none';
+  script-src 'self';
+  style-src 'self';
+  img-src 'self' data:;
+  font-src 'self';
+  connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 https://localhost:8000;
+  base-uri 'none';
+  form-action 'none';
+">
+<!--
+  frame-ancestors is deliberately NOT listed above: browsers ignore it in a
+  <meta> policy and log an error for it. Clickjacking protection for the console
+  has to come from the layer that serves this file, as an HTTP response header:
+
+      Content-Security-Policy: frame-ancestors 'none'
+      X-Frame-Options: DENY
+
+  The API already sets both on its own responses (isdmaas_core/security.py); see
+  DEPLOY.md for the reverse-proxy configuration that applies them to the console.
+-->
+<meta name="referrer" content="no-referrer">
 <title>ISDMAAS · Mission Console</title>
-<style>
-  :root{
-    --bg:#04060d; --panel:rgba(11,16,28,.82); --panel2:rgba(20,28,46,.6);
-    --line:#1e2a44; --line2:#2c3c5c; --txt:#dde6f5; --dim:#7488a8; --faint:#4a5a78;
-    --accent:#3d8bff; --cyan:#39d4e8; --green:#34d399; --amber:#fbbf24; --red:#f4506a;
-    --mono:'SF Mono','Roboto Mono',Consolas,monospace;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html,body{height:100%}
-  body{background:var(--bg);color:var(--txt);font-family:'Inter',system-ui,-apple-system,sans-serif;overflow:hidden;user-select:none}
-  #scene{position:fixed;inset:0;z-index:0}
-  .ov{position:fixed;z-index:2}
-  #top{top:0;left:0;right:0;height:54px;padding:0 22px;display:flex;justify-content:space-between;
-       align-items:center;background:linear-gradient(180deg,rgba(4,6,13,.95),rgba(4,6,13,0));
-       border-bottom:1px solid rgba(30,42,68,.4)}
-  .brand{display:flex;align-items:center;gap:11px}
-  .logo{width:26px;height:26px;border:1.5px solid var(--accent);border-radius:6px;position:relative;
-        display:flex;align-items:center;justify-content:center}
-  .logo::before{content:'';width:11px;height:11px;border:1.5px solid var(--cyan);border-radius:50%}
-  .logo::after{content:'';position:absolute;width:21px;height:8px;border:1px solid var(--accent);
-        border-radius:50%;transform:rotate(-28deg);opacity:.7}
-  h1{font-size:15px;font-weight:600;letter-spacing:.5px}
-  h1 b{color:var(--accent);font-weight:700}
-  .tag{font-size:9.5px;color:var(--faint);letter-spacing:2px;text-transform:uppercase;margin-top:1px}
-  #sysstat{display:flex;align-items:center;gap:18px;font-size:11px;color:var(--dim);font-family:var(--mono)}
-  .stitem{display:flex;align-items:center;gap:6px}
-  .led{width:7px;height:7px;border-radius:50%;background:var(--red);box-shadow:0 0 6px var(--red)}
-  .led.on{background:var(--green);box-shadow:0 0 6px var(--green)}
-  .led.cy{background:var(--cyan);box-shadow:0 0 6px var(--cyan)}
-  #deck{top:70px;left:16px;width:312px;display:flex;flex-direction:column;gap:12px;
-        max-height:calc(100vh - 150px);overflow-y:auto;padding-right:4px}
-  #deck::-webkit-scrollbar{width:6px}#deck::-webkit-scrollbar-thumb{background:#1e2a44;border-radius:3px}
-  .card{background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
-        border-radius:12px;padding:15px 16px}
-  .card .hd{font-size:10px;text-transform:uppercase;letter-spacing:1.6px;color:var(--dim);
-            margin-bottom:11px;display:flex;align-items:center;gap:7px}
-  .card .hd::before{content:'';width:3px;height:11px;background:var(--accent);border-radius:2px}
-  .card.live .hd::before{background:var(--cyan)}
-  .card.hist .hd::before{background:var(--red)}
-  .card.socr .hd::before{background:var(--amber)}
-  button.amberbtn{background:linear-gradient(180deg,#fbbf24,#d99a10);color:#221a02}
-  .conj{border:1px solid var(--line2);border-radius:8px;padding:8px 9px;margin-bottom:6px;
-        background:#070b15;cursor:pointer;transition:.15s}
-  .conj:hover{border-color:var(--amber);background:rgba(251,191,36,.06)}
-  .conj .cn{font-size:11px;font-weight:600;color:var(--txt);line-height:1.3}
-  .conj .cm{font-size:10px;color:var(--dim);font-family:var(--mono);margin-top:3px;
-            display:flex;justify-content:space-between;gap:8px}
-  .conj .cm b{color:var(--amber)}
-  .libcat{margin-bottom:6px}
-  .libcat .cathd{font-size:11px;font-weight:600;color:var(--cyan);cursor:pointer;padding:5px 0;
-                 display:flex;align-items:center;gap:6px;user-select:none}
-  .libcat .cathd:hover{color:#fff}
-  .libcat .caret{transition:transform .15s;font-size:9px}
-  .libcat.open .caret{transform:rotate(90deg)}
-  .libitems{display:none;padding-left:12px}
-  .libcat.open .libitems{display:block}
-  .libev{font-size:11px;padding:5px 7px;border-radius:6px;cursor:pointer;margin-bottom:3px;
-         display:flex;align-items:center;gap:7px;border:1px solid transparent}
-  .libev:hover{background:#0a132288;border-color:var(--line2)}
-  .libev .qd{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-  .qd.quantified{background:var(--green)} .qd.partial{background:var(--amber)}
-  .qd.record_only{background:var(--dim)}
-  .evfact{font-size:10.5px;color:var(--dim);line-height:1.45;margin-top:4px}
-  .evsrc{font-size:9.5px;color:var(--faint);margin-top:5px;font-style:italic}
-  .evtag{display:inline-block;font-size:9px;padding:2px 7px;border-radius:10px;margin-bottom:6px}
-  .evtag.quantified{background:rgba(52,211,153,.15);color:var(--green)}
-  .evtag.partial{background:rgba(251,191,36,.15);color:var(--amber)}
-  .evtag.record_only{background:rgba(116,136,168,.18);color:var(--dim)}
-  label{display:block;font-size:10px;color:var(--faint);margin:0 0 4px;letter-spacing:.4px;text-transform:uppercase}
-  select,input{background:#070b15;border:1px solid var(--line2);color:var(--txt);border-radius:7px;
-       padding:8px 10px;font-size:13px;width:100%;font-family:var(--mono)}
-  select:focus,input:focus{outline:none;border-color:var(--accent)}
-  .row{display:flex;gap:9px;margin-top:9px}.row>div{flex:1}
-  .row:first-of-type{margin-top:0}
-  button{background:linear-gradient(180deg,var(--accent),#2d6fd6);color:#fff;border:none;border-radius:8px;
-         padding:11px;font-size:12.5px;font-weight:650;cursor:pointer;width:100%;margin-top:13px;letter-spacing:.3px}
-  button:hover{filter:brightness(1.12)}button:disabled{opacity:.45;cursor:wait}
-  button.ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line2);margin-top:9px}
-  button.cyan{background:linear-gradient(180deg,#39d4e8,#1d9fb4);color:#022}
-  button.histbtn{background:linear-gradient(180deg,#f4506a,#c23350);color:#fff}
-  #telemetry{top:70px;right:16px;width:300px;display:none;flex-direction:column;gap:12px;
-             max-height:calc(100vh - 150px);overflow-y:auto;padding-left:4px}
-  #telemetry::-webkit-scrollbar{width:6px}#telemetry::-webkit-scrollbar-thumb{background:#1e2a44;border-radius:3px}
-  .pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px}
-  .monstats{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0 4px}
-  .ms{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:7px;padding:7px 6px;text-align:center}
-  .msv{font-family:var(--mono);font-size:17px;font-weight:700;color:var(--txt);line-height:1.1}
-  .msv.crit{color:var(--red)} .msv.warn{color:var(--amber)}
-  .msl{font-size:9px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-  .manbanner{display:flex;justify-content:space-between;align-items:center;background:linear-gradient(90deg,rgba(244,80,106,.16),rgba(244,80,106,.04));border:1px solid rgba(244,80,106,.4);border-radius:8px;padding:9px 12px;margin-top:4px}
-  .manbanner-l{font-family:var(--mono);font-weight:700;color:var(--red);font-size:13px;letter-spacing:.5px}
-  .manbanner-r{font-family:var(--mono);font-size:10px;color:var(--amber);background:rgba(251,191,36,.14);padding:3px 8px;border-radius:10px}
-  .cmdbox{margin-top:12px;background:rgba(7,11,21,.6);border:1px solid #2c3c5c;border-left:3px solid var(--cyan);border-radius:7px;padding:10px 12px}
-  .cmdhd{font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:1px;margin-bottom:7px}
-  .cmdline{font-family:var(--mono);font-size:11px;color:var(--txt);margin:3px 0;line-height:1.4}
-  .cmdline b{color:var(--cyan)}
-  .cmdnote{font-size:9px;color:var(--faint);margin-top:7px;line-height:1.4;font-style:italic}
-  .decblock{border-radius:8px;padding:10px 12px;margin-top:4px;border:1px solid #2c3c5c;background:rgba(7,11,21,.5)}
-  .decblock.monitor{border-left:3px solid var(--accent)}
-  .decblock.review{border-left:3px solid var(--amber)}
-  .decblock.plan{border-left:3px solid var(--red)}
-  .decrow{display:flex;justify-content:space-between;gap:10px;padding:3px 0;align-items:baseline}
-  .deck{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;flex-shrink:0}
-  .decv{font-family:var(--mono);font-weight:700;font-size:15px}
-  .decv.monitor-t{color:var(--accent)} .decv.review-t{color:var(--amber)}
-  .decv2{font-family:var(--mono);font-size:11px;color:var(--txt);text-align:right;line-height:1.4}
-  .NOMINAL{background:rgba(52,211,153,.16);color:var(--green)}
-  .ELEVATED{background:rgba(251,191,36,.16);color:var(--amber)}
-  .HIGH{background:rgba(244,80,106,.18);color:var(--red)}
-  .CRITICAL{background:var(--red);color:#fff;box-shadow:0 0 12px rgba(244,80,106,.5)}
-  .APPROVED{background:rgba(52,211,153,.2);color:var(--green)}
-  .REJECTED{background:var(--red);color:#fff}
-  .NO_ACTION{background:rgba(116,136,168,.2);color:var(--dim)}
-  .kv{display:flex;justify-content:space-between;align-items:center;padding:6px 0;
-      border-bottom:1px solid rgba(30,42,68,.45);font-size:12px}
-  .kv:last-child{border-bottom:none}
-  .kv .k{color:var(--dim);font-size:11px}
-  .kv .v{font-family:var(--mono);text-align:right;font-size:12px}
-  .big{font-size:20px;font-family:var(--mono);font-weight:600;letter-spacing:.5px}
-  .arrow{color:var(--cyan)}
-  .chk{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:11.5px;color:var(--txt)}
-  .mk{width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;
-      font-size:10px;font-weight:800;flex-shrink:0}
-  .mk.ok{background:rgba(52,211,153,.18);color:var(--green)}
-  .mk.no{background:rgba(244,80,106,.2);color:var(--red)}
-  .verdict{text-align:center;padding:12px;border-radius:9px;margin-top:6px;font-weight:700;
-           font-size:13px;letter-spacing:1px}
-  .verdict.APPROVED{background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.4);color:var(--green)}
-  .verdict.REJECTED{background:rgba(244,80,106,.12);border:1px solid rgba(244,80,106,.4);color:var(--red)}
-  .loading{color:var(--cyan);font-size:11.5px;padding:10px 0;display:flex;align-items:center;gap:9px}
-  .spin{width:13px;height:13px;border:2px solid rgba(57,212,232,.25);border-top-color:var(--cyan);
-        border-radius:50%;animation:sp .7s linear infinite}
-  @keyframes sp{to{transform:rotate(360deg)}}
-  .err{color:var(--red);font-size:11.5px;padding:8px 0}
-  .muted{color:var(--faint);font-size:10.5px}
-  #legend{bottom:14px;left:16px;background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line);
-          border-radius:10px;padding:9px 13px;font-size:10.5px;color:var(--dim);display:flex;gap:16px;flex-wrap:wrap;max-width:340px}
-  .leg{display:flex;align-items:center;gap:6px}
-  .ldot{width:18px;height:3px;border-radius:2px}
-  .ldotc{width:9px;height:9px;border-radius:50%}
-  #hint{bottom:16px;right:18px;font-size:10px;color:var(--faint);font-family:var(--mono);z-index:2;position:fixed}
-  #tooltip{position:fixed;z-index:50;pointer-events:none;display:none;
-    background:rgba(7,11,21,.95);border:1px solid var(--cyan);border-radius:7px;
-    padding:6px 10px;font-family:var(--mono);font-size:11px;color:var(--txt);
-    box-shadow:0 4px 18px rgba(0,0,0,.5);max-width:220px;backdrop-filter:blur(6px)}
-  #tooltip .tname{color:var(--cyan);font-weight:600;font-size:12px}
-  #tooltip .tmeta{color:var(--dim);font-size:10px;margin-top:2px}
-  #tooltip .ttype{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;margin-top:3px}
-  .ttype.DEBRIS{background:rgba(244,80,106,.2);color:var(--red)}
-  .ttype.PAYLOAD{background:rgba(61,139,255,.2);color:var(--accent)}
-  .ttype.RB{background:rgba(251,191,36,.2);color:var(--amber)}
-  #clock{bottom:14px;left:50%;transform:translateX(-50%);background:var(--panel);backdrop-filter:blur(14px);
-         border:1px solid var(--line);border-radius:10px;padding:9px 20px;display:none;text-align:center}
-  #clock .lab{font-size:9px;color:var(--faint);letter-spacing:2px;text-transform:uppercase}
-  #clock .sublab{font-size:8px;color:var(--faint);letter-spacing:.5px;margin-top:2px;opacity:.8}
-  #clock .val{font-size:18px;font-family:var(--mono);color:var(--amber);font-weight:600;margin-top:2px}
-  #seq{bottom:60px;left:50%;transform:translateX(-50%);background:var(--panel);backdrop-filter:blur(14px);
-       border:1px solid var(--line);border-radius:12px;padding:12px 16px;display:none;
-       max-width:760px;width:calc(100% - 360px)}
-  .seqhd{font-size:9px;letter-spacing:2px;color:var(--faint);text-transform:uppercase;
-         text-align:center;margin-bottom:9px}
-  #seqsteps{display:flex;gap:6px;align-items:stretch}
-  .step{flex:1;background:#070b15;border:1px solid var(--line);border-radius:8px;padding:7px 6px;
-        text-align:center;position:relative;opacity:.38;transition:all .35s}
-  .step .n{font-size:9px;color:var(--faint);font-family:var(--mono)}
-  .step .t{font-size:9.5px;color:var(--dim);margin-top:3px;line-height:1.25;font-weight:500}
-  .step.active{opacity:1;border-color:var(--cyan);box-shadow:0 0 14px rgba(57,212,232,.3);background:rgba(57,212,232,.07)}
-  .step.active .t{color:var(--cyan)}
-  .step.done{opacity:1;border-color:var(--green);background:rgba(52,211,153,.06)}
-  .step.done .t{color:var(--green)}
-  .step.done .n::after{content:' \2713';color:var(--green)}
-  .step.alert{opacity:1;border-color:var(--red);background:rgba(244,80,106,.08)}
-  .step.alert .t{color:var(--red)}
-  #livestat{position:fixed;top:62px;left:50%;transform:translateX(-50%);z-index:2;
-       background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--line2);
-       border-radius:20px;padding:5px 15px;font-size:11px;font-family:var(--mono);color:var(--cyan);display:none}
-</style>
+<link rel="stylesheet" href="console.css">
 </head>
 <body>
-<canvas id="scene"></canvas>
-<div id="tooltip"></div>
+<canvas id="scene" aria-hidden="true"></canvas>
+<div id="tooltip" role="status" aria-live="polite"></div>
 
-<div class="ov" id="top">
+<header id="top">
   <div class="brand">
-    <div class="logo"></div>
-    <div><h1><b>ISDMAAS</b> Mission Console</h1>
-      <div class="tag">Autonomous Collision Avoidance</div></div>
+    <div class="logo" aria-hidden="true"></div>
+    <div>
+      <h1><b>ISDMAAS</b> Mission Console</h1>
+      <p class="tag">Collision avoidance decision support</p>
+    </div>
   </div>
   <div id="sysstat">
-    <div class="stitem"><span class="led" id="apiled"></span><span id="apitxt">LINK…</span></div>
-    <div class="stitem" id="syncstat" title="Click to refresh all live data" onclick="manualRefresh()" style="cursor:pointer">
-      <span class="led cy" id="syncled"></span><span id="synctxt">SYNC…</span>
-      <span id="refreshicon" style="margin-left:5px;font-size:12px">&#8635;</span></div>
-    <div class="stitem"><span class="led cy"></span><span id="utc">--:--:-- UTC</span></div>
+    <div class="stitem"><span class="led" id="apiled"></span><span id="apitxt">Connecting…</span></div>
+    <button type="button" class="stitem linkbtn" id="syncstat" title="Refresh live data">
+      <span class="led cy" id="syncled"></span><span id="synctxt">Data —</span>
+      <span id="refreshicon" aria-hidden="true">⟳</span>
+    </button>
+    <div class="stitem" id="opbadge"></div>
+    <div class="stitem"><span class="led cy" aria-hidden="true"></span><time id="utc">--:--:-- UTC</time></div>
+  </div>
+</header>
+
+<div id="banner" role="alert" hidden></div>
+
+<!-- ------------------------------------------------------------- sign in -->
+<div id="loginov" role="dialog" aria-modal="true" aria-labelledby="loginTitle" hidden>
+  <div class="loginbox">
+    <h2 id="loginTitle"><b>ISDMAAS</b> Operator sign-in</h2>
+    <p class="sub">Operators manage their own assets</p>
+    <form id="loginForm" novalidate>
+      <label for="lg_user">Operator username</label>
+      <input id="lg_user" name="username" autocomplete="username" spellcheck="false" required>
+      <label for="lg_pass">Password</label>
+      <input id="lg_pass" name="password" type="password" autocomplete="current-password" required>
+      <button type="submit" id="lg_submit">Sign in</button>
+    </form>
+    <div class="row">
+      <button type="button" class="ghost" id="lg_register">Register new operator</button>
+      <button type="button" class="ghost" id="lg_skip">Continue read-only</button>
+    </div>
+    <p id="lg_msg" class="muted" role="status" aria-live="polite"></p>
+    <div id="democreds" class="democreds" hidden></div>
   </div>
 </div>
 
-<div class="ov" id="livestat"></div>
+<!-- ------------------------------------------------------------ left deck -->
+<main id="deck" aria-label="Controls">
 
-<div class="ov" id="deck">
-  <div class="card" style="border-color:#f4506a40">
-    <div class="hd">&#128680; Conjunction Monitor</div>
-    <div class="muted" style="margin-bottom:8px">Automatically screens protected
-      satellites against the full catalog and raises alerts. ISDMAAS's own
-      detection \u2014 independent of SOCRATES.</div>
-    <label>Watchlist (NORAD IDs, blank = full fleet)</label>
-    <input id="watchlist" placeholder="39634, 40697  ·  blank = all Sentinels" style="margin-bottom:8px">
-    <div class="row" style="margin-top:0">
-      <button class="ghost" onclick="runMonitor()" style="margin-top:0">Scan now</button>
-      <button class="ghost" onclick="toggleAutoMonitor()" id="autoMonBtn" style="margin-top:0;border-color:#f4506a;color:#f4506a">Auto-scan: OFF</button>
+  <section class="card alert">
+    <h2 class="hd">Conjunction monitor</h2>
+    <p class="muted">Screens protected satellites against the full public catalog
+      and raises an alert on anything new. ISDMAAS's own detection, independent
+      of SOCRATES.</p>
+    <label for="watchlist">Watchlist</label>
+    <input id="watchlist" placeholder="39634, 40697 — blank for the whole fleet"
+           spellcheck="false" inputmode="numeric">
+    <div class="row">
+      <button type="button" class="ghost" id="btnMonitor">Scan now</button>
+      <button type="button" class="ghost danger" id="btnAutoMonitor" aria-pressed="false">Auto-scan: off</button>
     </div>
-    <div id="monitorStats" class="monstats" style="display:none">
-      <div class="ms"><div class="msv" id="ms_sats">\u2014</div><div class="msl">satellites</div></div>
-      <div class="ms"><div class="msv" id="ms_conj">\u2014</div><div class="msl">conjunctions</div></div>
-      <div class="ms"><div class="msv" id="ms_new">\u2014</div><div class="msl">new alerts</div></div>
-      <div class="ms"><div class="msv crit" id="ms_crit">\u2014</div><div class="msl">critical</div></div>
-      <div class="ms"><div class="msv warn" id="ms_warn">\u2014</div><div class="msl">warning</div></div>
-      <div class="ms"><div class="msv" id="ms_time">\u2014</div><div class="msl">scan time</div></div>
+    <div id="monitorStats" class="monstats" hidden>
+      <div class="ms"><span class="msv" id="ms_sats">—</span><span class="msl">Satellites</span></div>
+      <div class="ms"><span class="msv" id="ms_conj">—</span><span class="msl">Conjunctions</span></div>
+      <div class="ms"><span class="msv" id="ms_new">—</span><span class="msl">New alerts</span></div>
+      <div class="ms"><span class="msv crit" id="ms_crit">—</span><span class="msl">Critical</span></div>
+      <div class="ms"><span class="msv warn" id="ms_warn">—</span><span class="msl">Warning</span></div>
+      <div class="ms"><span class="msv" id="ms_time">—</span><span class="msl">Scan time</span></div>
     </div>
-    <div id="monitorStatus" class="muted" style="margin-top:8px"></div>
-    <div id="monitorAlerts" style="margin-top:8px"></div>
-  </div>
+    <p id="monitorStatus" class="muted" role="status" aria-live="polite"></p>
+    <div id="monitorAlerts" class="list"></div>
+  </section>
 
-  <div class="card">
-    <div class="hd">Primary Asset</div>
-    <label>Enter NORAD ID · name · COSPAR</label>
-    <input id="query" placeholder="25544  ·  ISS  ·  1998-067A" style="margin-bottom:8px">
-    <button class="ghost" onclick="resolveSat()" style="margin-top:0">Resolve &amp; load</button>
-    <div id="resolveMsg" class="muted" style="margin-top:7px"></div>
-    <label style="margin-top:11px">Or pick a configured asset</label>
+  <section class="card operator">
+    <h2 class="hd">My satellites</h2>
+    <div id="mysatsbody"><p class="muted">Sign in to register and manage your assets.</p></div>
+    <details id="addSatDetails">
+      <summary>Register a satellite</summary>
+      <label for="newsat_name">Name</label>
+      <input id="newsat_name" placeholder="MY-SAT-1" maxlength="80">
+      <label for="newsat_t1">Element set line 1</label>
+      <input id="newsat_t1" class="tle" placeholder="1 90001U ..." spellcheck="false">
+      <label for="newsat_t2">Element set line 2</label>
+      <input id="newsat_t2" class="tle" placeholder="2 90001 ..." spellcheck="false">
+      <button type="button" class="ghost" id="btnAddSat">Add satellite</button>
+    </details>
+    <button type="button" class="cyan" id="btnScreenMine">Screen my satellite vs full catalog</button>
+    <p class="muted small">A full-catalog screen with refined times of closest
+      approach. Typically completes in a second or two.</p>
+    <p id="mysat_msg" class="muted" role="status" aria-live="polite"></p>
+  </section>
+
+  <section class="card">
+    <h2 class="hd">Primary asset</h2>
+    <label for="query">NORAD id, name, or COSPAR id</label>
+    <div class="row tight">
+      <input id="query" placeholder="25544 · ISS · 1998-067A" spellcheck="false">
+      <button type="button" class="ghost narrow" id="btnResolve">Find</button>
+    </div>
+    <p id="resolveMsg" class="muted" role="status" aria-live="polite"></p>
+    <label for="sat">Or pick a configured asset</label>
     <select id="sat"></select>
-    <button class="ghost" onclick="loadOrbit()">Render orbit</button>
-  </div>
+    <button type="button" class="ghost" id="btnLoadOrbit">Render orbit</button>
+  </section>
 
-  <div class="card live">
-    <div class="hd">Live Debris Tracking</div>
-    <label>Real catalog group (CelesTrak)</label>
+  <section class="card live">
+    <h2 class="hd">Live debris tracking</h2>
+    <label for="group">Catalog group</label>
     <select id="group">
       <option value="cosmos-2251-debris">Cosmos 2251 debris (2009)</option>
       <option value="iridium-33-debris">Iridium 33 debris (2009)</option>
@@ -251,1116 +159,106 @@
       <option value="all">Everything cached</option>
     </select>
     <div class="row">
-      <div><label>Max objects</label><input id="livelimit" type="number" value="300" min="10" max="2000"></div>
-      <div><label>Speed</label>
+      <div><label for="livelimit">Max objects</label>
+        <input id="livelimit" type="number" value="300" min="10" max="2000" step="10"></div>
+      <div><label for="livespeed">Time rate</label>
         <select id="livespeed">
-          <option value="1">1×</option><option value="60" selected>60×</option>
-          <option value="600">600×</option><option value="3600">3600×</option>
+          <option value="1">1×</option>
+          <option value="60" selected>60×</option>
+          <option value="600">600×</option>
+          <option value="3600">3600×</option>
         </select></div>
     </div>
-    <button class="cyan" onclick="loadLive()">&#128752; Track real debris live</button>
-    <button class="ghost" onclick="clearLive()">Clear live objects</button>
-    <div id="livemsg" class="muted" style="margin-top:8px"></div>
-  </div>
+    <button type="button" class="cyan" id="btnLoadLive">Track real debris live</button>
+    <button type="button" class="ghost" id="btnClearLive">Clear</button>
+    <p id="livemsg" class="muted" role="status" aria-live="polite"></p>
+  </section>
 
-  <div class="card">
-    <div class="hd">Conjunction Simulator</div>
-    <div class="muted" style="margin-bottom:9px">A <b>what-if</b> test: invent a threat for
-      the loaded primary and see ISDMAAS's response. (Real conjunctions auto-fill from the
-      SOCRATES panel below.)</div>
-    <label style="color:var(--dim);margin-bottom:6px">Threat geometry</label>
-    <div class="row" style="margin-top:0">
-      <div><label>Miss dist · km</label><input id="miss" type="number" value="0.04" step="0.01"></div>
-      <div><label>Time to TCA · h</label><input id="tca" type="number" value="8"></div>
+  <section class="card">
+    <h2 class="hd">Conjunction simulator</h2>
+    <p class="muted">A what-if test: construct a threat against the loaded primary
+      and see the recommendation. Real conjunctions load from the panels below.</p>
+    <div class="row">
+      <div><label for="miss">Miss distance · km</label>
+        <input id="miss" type="number" value="0.3" step="0.01" min="0.001"></div>
+      <div><label for="tca">Time to TCA · h</label>
+        <input id="tca" type="number" value="12" step="0.5" min="0.05"></div>
     </div>
-    <label style="color:var(--dim);margin:11px 0 6px">Primary satellite properties</label>
-    <div class="row" style="margin-top:0">
-      <div><label>Sat mass · kg</label><input id="mass" type="number" value="2300"></div>
-      <div><label>Fuel avail · kg</label><input id="fuel" type="number" value="5"></div>
+    <div class="row">
+      <div><label for="mass">Satellite mass · kg</label>
+        <input id="mass" type="number" value="2300" min="1"></div>
+      <div><label for="fuel">Propellant available · kg</label>
+        <input id="fuel" type="number" value="5" min="0" step="0.1"></div>
     </div>
-    <button id="planBtn" onclick="runPlan()">&#9654; Assess threat &amp; plan maneuver</button>
-    <button id="autoBtn" class="ghost" onclick="runAuto()" style="border-color:#34d399;color:#34d399">&#9883; AUTONOMOUS MODE &mdash; detect &amp; self-maneuver</button>
-  </div>
+    <button type="button" id="btnPlan">Assess threat &amp; plan maneuver</button>
+    <button type="button" class="ghost success" id="btnAuto">Autonomous mode — detect &amp; plan</button>
+  </section>
 
-  <div class="card socr">
-    <div class="hd">SOCRATES Live Conjunctions</div>
-    <div class="muted" style="margin-bottom:8px">Real upcoming close approaches in the
-      public catalog, screened &amp; published by CelesTrak SOCRATES.</div>
-    <div class="row" style="margin-top:0">
-      <div><label>Scope</label>
+  <section class="card socr">
+    <h2 class="hd">SOCRATES live conjunctions</h2>
+    <p class="muted">Upcoming close approaches published by CelesTrak — an
+      independent cross-check on ISDMAAS's own screen.</p>
+    <div class="row">
+      <div><label for="socrScope">Scope</label>
         <select id="socrScope">
           <option value="global">Whole catalog</option>
           <option value="primary">Selected primary</option>
         </select></div>
-      <div><label>Rank by</label>
+      <div><label for="socrOrder">Rank by</label>
         <select id="socrOrder">
           <option value="MAXPROB">Max probability</option>
           <option value="MINRANGE">Closest miss</option>
         </select></div>
     </div>
-    <button class="amberbtn" onclick="loadSocrates()">&#128268; Fetch live conjunctions</button>
-    <div id="socrList" style="margin-top:10px"></div>
-  </div>
+    <button type="button" class="amber" id="btnSocrates">Fetch live conjunctions</button>
+    <div id="socrList" class="list"></div>
+  </section>
 
-  <div class="card hist">
-    <div class="hd">Historical Event Library</div>
-    <div class="muted" style="margin-bottom:8px">Documented events. <span style="color:var(--green)">●</span> full replay ·
-      <span style="color:var(--amber)">●</span> partial data · <span style="color:var(--dim)">●</span> record only.</div>
-    <div id="libraryTree"><div class="muted">Loading library…</div></div>
-    <div id="eventDetail" style="margin-top:10px"></div>
-  </div>
+  <section class="card hist">
+    <h2 class="hd">Historical event library</h2>
+    <p class="muted">Documented events.
+      <span class="qd quantified" aria-hidden="true"></span> full replay ·
+      <span class="qd partial" aria-hidden="true"></span> partial data ·
+      <span class="qd record_only" aria-hidden="true"></span> record only.</p>
+    <div id="libraryTree"><p class="muted">Loading library…</p></div>
+    <div id="eventDetail"></div>
+  </section>
+</main>
+
+<!-- ----------------------------------------------------------- telemetry -->
+<aside id="telemetry" aria-label="Decision telemetry" hidden>
+  <section class="card">
+    <h2 class="hd">Decision telemetry</h2>
+    <div id="result"><p class="muted">Run an assessment to populate telemetry.</p></div>
+  </section>
+</aside>
+
+<div id="legend">
+  <span class="leg"><i class="ldot primary"></i>Primary</span>
+  <span class="leg"><i class="ldot threat"></i>Threat</span>
+  <span class="leg"><i class="ldot post"></i>Post-maneuver</span>
+  <span class="leg" id="liveleg" hidden>
+    <i class="ldotc debris"></i>Debris
+    <i class="ldotc rb"></i>R/B
+    <i class="ldotc payload"></i>Payload
+  </span>
 </div>
 
-<div class="ov" id="telemetry">
-  <div class="card" id="telcard">
-    <div class="hd">Decision Telemetry</div>
-    <div id="result"><div class="muted">Run a simulation to populate telemetry.</div></div>
-  </div>
+<div id="clock" hidden>
+  <span class="lab">Time to closest approach</span>
+  <span class="val" id="clockval">--:--:--</span>
+  <span class="sublab" id="clocksub"></span>
 </div>
 
-<div class="ov" id="legend">
-  <div class="leg"><span class="ldot" style="background:#3d8bff"></span> Primary</div>
-  <div class="leg"><span class="ldot" style="background:#f4506a"></span> Threat</div>
-  <div class="leg"><span class="ldot" style="background:#34d399"></span> Post-maneuver</div>
-  <div class="leg"><span class="ldot" style="background:#3d8bff;opacity:.4"></span> Uncertainty (3&sigma;)</div>
-  <div class="leg" id="liveleg" style="display:none"><span class="ldotc" style="background:#f4506a"></span> Debris
-    &nbsp;<span class="ldotc" style="background:#fbbf24"></span> R/B
-    &nbsp;<span class="ldotc" style="background:#3d8bff"></span> Payload</div>
+<div id="seq" hidden>
+  <p class="seqhd">Autonomous sequence</p>
+  <ol id="seqsteps"></ol>
 </div>
-<div class="ov" id="clock"><div class="lab">Projected time to TCA</div><div class="val" id="clockval">--:--:--</div><div class="sublab" id="clocksub"></div></div>
 
-<div class="ov" id="seq">
-  <div class="seqhd">Autonomous Sequence</div>
-  <div id="seqsteps"></div>
-</div>
-<div id="hint">drag &middot; rotate &nbsp;&nbsp; scroll &middot; zoom</div>
+<p id="hint">drag to rotate · scroll to zoom</p>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/satellite.js/5.0.0/satellite.min.js"></script>
-<script>
-const API="http://localhost:8000";
-const RE=6371;
-let scene,camera,renderer,earth,cloudMesh;
-let primaryOrbit,threatOrbit,postOrbit,primaryDot,threatDot,tcaMarker,primaryEllip,threatEllip;
-let primaryTrack=[],threatTrack=[];
-let dragging=false,px=0,py=0,camTheta=0.9,camPhi=1.05,camR=22000,rot=0;
-let tcaSeconds=null,tcaStart=0,tcaRealEpoch=null;
-// ---- live tracking state ----
-let liveGroup=null, liveSats=[], liveSimTime=new Date(), liveLastReal=performance.now();
-
-function initScene(){
-  const c=document.getElementById("scene");
-  scene=new THREE.Scene();
-  scene.fog=new THREE.FogExp2(0x04060d,0.0000035);
-  camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,80,400000);
-  renderer=new THREE.WebGLRenderer({canvas:c,antialias:true,alpha:true});
-  renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));
-
-  // ---- realistic textured Earth (loads from CDN; falls back to solid blue) ----
-  const texLoader=new THREE.TextureLoader();
-  texLoader.setCrossOrigin("anonymous");
-  const EARTH_TEX="https://unpkg.com/three-globe@2.31.0/example/img/earth-blue-marble.jpg";
-  const EARTH_BUMP="https://unpkg.com/three-globe@2.31.0/example/img/earth-topology.png";
-  const CLOUD_TEX="https://unpkg.com/three-globe@2.31.0/example/img/earth-water.png";
-  const earthMat=new THREE.MeshPhongMaterial({color:0x2a4a6a,emissive:0x0a1a2a,
-    emissiveIntensity:0.35,shininess:14,specular:0x223344});
-  earth=new THREE.Mesh(new THREE.SphereGeometry(RE,96,96),earthMat);
-  scene.add(earth);
-  // load the day texture; on success swap it in, on error keep the solid sphere
-  texLoader.load(EARTH_TEX,
-    t=>{earthMat.map=t;earthMat.color.setHex(0xffffff);earthMat.emissive.setHex(0x113355);
-        earthMat.emissiveIntensity=0.15;earthMat.needsUpdate=true;},
-    undefined,
-    ()=>{console.log("Earth texture offline — using solid sphere");});
-  texLoader.load(EARTH_BUMP,t=>{earthMat.bumpMap=t;earthMat.bumpScale=12;earthMat.needsUpdate=true;},
-    undefined,()=>{});
-  // cloud layer (subtle, rotating)
-  const cloudMat=new THREE.MeshPhongMaterial({transparent:true,opacity:.28,depthWrite:false});
-  cloudMesh=new THREE.Mesh(new THREE.SphereGeometry(RE*1.012,64,48),cloudMat);
-  texLoader.load(CLOUD_TEX,t=>{cloudMat.map=t;cloudMat.alphaMap=t;cloudMat.needsUpdate=true;},
-    undefined,()=>{cloudMesh.visible=false;});
-  scene.add(cloudMesh);
-  // atmosphere glow
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(RE*1.025,64,64),
-    new THREE.MeshBasicMaterial({color:0x4499ff,transparent:true,opacity:.10,side:THREE.BackSide})));
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(RE*1.10,64,64),
-    new THREE.MeshBasicMaterial({color:0x2266cc,transparent:true,opacity:.04,side:THREE.BackSide})));
-
-  scene.add(new THREE.AmbientLight(0x6a7a92,0.85));
-  const sun=new THREE.DirectionalLight(0xfff4e6,1.5);sun.position.set(3,1,2);scene.add(sun);
-  const rim=new THREE.DirectionalLight(0x3d8bff,0.35);rim.position.set(-1.5,-0.3,-1);scene.add(rim);
-
-  for(const[cnt,r0,sz,col]of[[1800,140000,260,0x6a7a98],[600,90000,420,0x9fb0d0]]){
-    const g=new THREE.BufferGeometry();const a=[];
-    for(let i=0;i<cnt;i++){const t=Math.random()*6.283,p=Math.acos(2*Math.random()-1);
-      a.push(r0*Math.sin(p)*Math.cos(t),r0*Math.sin(p)*Math.sin(t),r0*Math.cos(p));}
-    g.setAttribute("position",new THREE.Float32BufferAttribute(a,3));
-    scene.add(new THREE.Points(g,new THREE.PointsMaterial({color:col,size:sz})));
-  }
-
-  initHover();
-  updateCam();animate();
-  addEventListener("resize",()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth,innerHeight);});
-  c.addEventListener("mousedown",e=>{dragging=true;px=e.clientX;py=e.clientY});
-  addEventListener("mouseup",()=>dragging=false);
-  addEventListener("mousemove",e=>{if(!dragging)return;
-    camTheta-=(e.clientX-px)*0.005;camPhi=Math.max(0.15,Math.min(2.95,camPhi-(e.clientY-py)*0.005));
-    px=e.clientX;py=e.clientY;updateCam()});
-  c.addEventListener("wheel",e=>{e.preventDefault();camR=Math.max(8800,Math.min(70000,camR+e.deltaY*16));updateCam()},{passive:false});
-}
-function updateCam(){
-  camera.position.set(camR*Math.sin(camPhi)*Math.cos(camTheta),camR*Math.cos(camPhi),
-    camR*Math.sin(camPhi)*Math.sin(camTheta));
-  camera.lookAt(0,0,0);
-}
-function animate(){
-  requestAnimationFrame(animate);
-  rot+=0.0006;earth.rotation.y=rot;cloudMesh.rotation.y=rot*1.05;
-  const t=Date.now()*0.00003;
-  if(primaryDot&&primaryTrack.length)primaryDot.position.copy(pos(primaryTrack,t));
-  if(threatDot&&threatTrack.length)threatDot.position.copy(pos(threatTrack,t+0.5));
-  if(tcaRealEpoch!==null){
-    // real conjunction with a known future TCA timestamp -> true live countdown
-    const left=Math.max(0,(tcaRealEpoch-Date.now())/1000);
-    document.getElementById("clockval").textContent=fmt(left);
-  } else if(tcaSeconds!==null){
-    // synthetic/historical threat -> accelerated demonstration countdown
-    const left=Math.max(0,tcaSeconds-(Date.now()-tcaStart)/1000*400);
-    document.getElementById("clockval").textContent=fmt(left);
-  }
-  propagateLive();
-  updateHover();
-  renderer.render(scene,camera);
-}
-function pos(track,t){const i=Math.floor(((t%1)+1)%1*track.length)%track.length;
-  return new THREE.Vector3(...track[i]);}
-function fmt(s){s=Math.floor(s);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60;
-  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(x).padStart(2,'0');}
-
-function drawOrbit(track,color,old,glow){
-  if(old&&old.parent)scene.remove(old);
-  const pts=track.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
-  pts.push(pts[0].clone());
-  const g=new THREE.BufferGeometry().setFromPoints(pts);
-  const l=new THREE.Line(g,new THREE.LineBasicMaterial({color,transparent:true,opacity:glow?.95:.8}));
-  scene.add(l);return l;
-}
-function mkDot(color,size){const m=new THREE.Mesh(new THREE.SphereGeometry(size||190,18,18),
-  new THREE.MeshBasicMaterial({color}));
-  const halo=new THREE.Mesh(new THREE.SphereGeometry((size||190)*2.2,16,16),
-    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.18}));
-  m.add(halo);scene.add(m);return m;}
-
-function mkEllipsoid(centre,color,scale,old){
-  if(old&&old.parent)scene.remove(old);
-  const g=new THREE.SphereGeometry(1,24,18);
-  const m=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color,wireframe:true,
-    transparent:true,opacity:.32}));
-  m.scale.set(scale[0],scale[1],scale[2]);
-  m.position.set(centre[0],centre[1],centre[2]);
-  scene.add(m);
-  const m2=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color,transparent:true,opacity:.06}));
-  m2.scale.set(scale[0],scale[1],scale[2]);m2.position.copy(m.position);scene.add(m2);
-  m.userData.glow=m2;
-  return m;
-}
-
-function rotatePlane(track,incDeg,raanDeg){
-  const i=incDeg*Math.PI/180,O=raanDeg*Math.PI/180;
-  const ci=Math.cos(i),si=Math.sin(i),cO=Math.cos(O),sO=Math.sin(O);
-  return track.map(([x,y,z])=>{
-    let y1=y*ci-z*si, z1=y*si+z*ci, x1=x;
-    return [x1*cO-y1*sO, x1*sO+y1*cO, z1];
-  });
-}
-
-// ===================== LIVE DEBRIS TRACKING (satellite.js) =====================
-const LIVE_COLOR={DEBRIS:0xf4506a, PAYLOAD:0x3d8bff, "ROCKET BODY":0xfbbf24};
-function eciToScene(p){ return new THREE.Vector3(p.x, p.z, -p.y); } // km ECI -> three.js (RE in km already)
-function propagateLive(){
-  if(!liveSats.length) return;
-  const now=performance.now(); const dt=(now-liveLastReal)/1000; liveLastReal=now;
-  const sp=parseFloat(document.getElementById("livespeed").value)||60;
-  liveSimTime=new Date(liveSimTime.getTime()+dt*sp*1000);
-  for(const o of liveSats){
-    const pv=satellite.propagate(o.satrec, liveSimTime);
-    if(pv && pv.position) o.mesh.position.copy(eciToScene(pv.position));
-  }
-}
-async function loadLive(){
-  const grp=document.getElementById("group").value;
-  const lim=document.getElementById("livelimit").value;
-  const msg=document.getElementById("livemsg");
-  msg.style.color="var(--cyan)";msg.textContent="Fetching real catalog\u2026";
-  clearLive();
-  try{
-    const d=await (await fetch(`${API}/live/catalog?group=${grp}&limit=${lim}`)).json();
-    if(d.detail){msg.style.color="var(--amber)";msg.textContent=d.detail;return;}
-    if(!d.objects||!d.objects.length){msg.style.color="var(--amber)";
-      msg.textContent="No objects cached. Run: python debris_data.py sync";return;}
-    for(const o of d.objects){
-      let sr; try{ sr=satellite.twoline2satrec(o.tle1,o.tle2); }catch(e){ continue; }
-      const col=LIVE_COLOR[o.type]||0x9fb3d0;
-      const m=new THREE.Mesh(new THREE.SphereGeometry(95,8,8),
-        new THREE.MeshBasicMaterial({color:col}));
-      scene.add(m);
-      liveSats.push({satrec:sr,mesh:m,type:o.type,name:o.name,norad:o.norad,
-                     apogee_km:o.apogee_km,perigee_km:o.perigee_km});
-    }
-    liveSimTime=new Date();liveLastReal=performance.now();
-    document.getElementById("liveleg").style.display="flex";
-    const ls=document.getElementById("livestat");ls.style.display="block";
-    ls.textContent="\u25CF LIVE \u00b7 "+liveSats.length+" real objects \u00b7 "+grp;
-    msg.style.color="var(--green)";
-    msg.textContent="\u2713 Tracking "+liveSats.length+" real objects live.";
-    startLiveRefresh(grp);
-    // pull the camera back so the shell is visible
-    camR=Math.max(camR,18000);updateCam();
-  }catch(e){msg.style.color="var(--red)";msg.textContent="Error: "+e+" \u2014 API on :8000?";}
-}
-function clearLive(){
-  liveSats.forEach(o=>scene.remove(o.mesh));liveSats=[];
-  document.getElementById("liveleg").style.display="none";
-  document.getElementById("livestat").style.display="none";
-}
-
-// ===================== SOCRATES LIVE CONJUNCTION FEED =====================
-// ===================== AUTOMATIC CONJUNCTION MONITOR =====================
-// ISDMAAS's own detection: screens protected satellites against the full catalog
-// and raises alerts for new conjunctions. This is the "8:30 AM, new conjunction
-// detected" capability — independent of SOCRATES.
-let autoMonTimer=null;
-async function runMonitor(){
-  const wl=document.getElementById("watchlist").value.trim();
-  const st=document.getElementById("monitorStatus");
-  const al=document.getElementById("monitorAlerts");
-  const grid=document.getElementById("monitorStats");
-  st.innerHTML='<span class="spin"></span> Screening catalog\u2026';
-  try{
-    const url=`${API}/monitor`+(wl?`?watchlist=${encodeURIComponent(wl)}`:"");
-    const resp=await fetch(url);
-    if(!resp.ok){throw new Error("HTTP "+resp.status+" (is the updated API running?)");}
-    const d=await resp.json();
-    // robust field access with fallbacks (older API builds may omit some)
-    const nSats   = d.satellites_monitored ?? d.satellites_ok ?? "?";
-    const nConj   = d.total_conjunctions ?? (d.conjunctions?d.conjunctions.length:0) ?? 0;
-    const nNew    = d.new_alerts ?? (d.alerts?d.alerts.length:0) ?? 0;
-    const nCrit   = d.n_critical ?? (d.conjunctions?d.conjunctions.filter(c=>String(c.risk).toUpperCase()==="CRITICAL").length:0) ?? 0;
-    const nWarn   = d.n_warning ?? (d.conjunctions?d.conjunctions.filter(c=>["HIGH","ELEVATED"].includes(String(c.risk).toUpperCase())).length:0) ?? 0;
-    const scanMs  = d.scan_ms;
-    const when    = d.checked_utc?new Date(d.checked_utc):new Date();
-    // populate the stats grid
-    grid.style.display="grid";
-    document.getElementById("ms_sats").textContent=nSats;
-    document.getElementById("ms_conj").textContent=nConj;
-    document.getElementById("ms_new").textContent=nNew;
-    document.getElementById("ms_crit").textContent=nCrit;
-    document.getElementById("ms_warn").textContent=nWarn;
-    document.getElementById("ms_time").textContent=
-      scanMs!=null?(scanMs<1000?scanMs+" ms":(scanMs/1000).toFixed(1)+" s"):"\u2014";
-    // status line: last scan time + headline
-    const hhmm=when.toISOString().substr(11,8)+"Z";
-    let headline;
-    if(nNew>0)headline=`<span style="color:var(--red);font-weight:600">\u26a0 ${nNew} NEW conjunction alert(s)</span>`;
-    else if(nConj>0)headline=`<span style="color:var(--amber)">${nConj} tracked, none new</span>`;
-    else headline=`<span style="color:var(--green)">fleet clear</span>`;
-    st.innerHTML=`Last scan ${hhmm} \u00b7 ${headline}`;
-    // alert list
-    const conj=d.conjunctions||[];
-    if(!conj.length){
-      al.innerHTML='<div class="muted">No conjunctions above alert thresholds. Fleet is clear.</div>';
-      if(d.errors&&d.errors.length)al.innerHTML+='<div class="muted" style="font-size:10px;margin-top:4px">'+d.errors.length+' satellite(s) without calibrated state (skipped).</div>';
-      return;
-    }
-    let h='';
-    for(const c of conj.slice(0,12)){
-      const newBadge=c.is_new?'<span class="pill CRITICAL" style="font-size:8px">NEW</span>':'';
-      const risk=c.risk||"NOMINAL";
-      const tcaH=(c.tca_h!=null)?c.tca_h.toFixed(1):"?";
-      h+=`<div class="conj" onclick="loadMonitorConjunction(${c.primary_norad},${c.secondary_norad},'${(c.secondary_name||'').replace(/'/g,'')}',${c.miss_km},${c.tca_h})">`+
-         `<div class="cn">${c.primary_name} &times; ${c.secondary_name} ${newBadge}</div>`+
-         `<div class="cm"><span>miss <b>${Number(c.miss_km).toFixed(3)} km</b></span>`+
-         `<span>Pc ${Number(c.pc).toExponential(1)}</span>`+
-         `<span class="pill ${risk}" style="font-size:9px">${risk}</span></div>`+
-         `<div class="cm"><span>TCA in ${tcaH} h</span></div></div>`;
-    }
-    al.innerHTML=h;
-  }catch(e){
-    grid.style.display="none";
-    st.innerHTML='<span style="color:var(--red)">Monitor failed: '+e.message+'</span>';
-  }
-}
-function toggleAutoMonitor(){
-  const btn=document.getElementById("autoMonBtn");
-  if(autoMonTimer){
-    clearInterval(autoMonTimer);autoMonTimer=null;
-    btn.textContent="Auto-scan: OFF";btn.style.opacity="1";
-  }else{
-    runMonitor();
-    autoMonTimer=setInterval(runMonitor,120000);  // re-scan every 2 min
-    btn.textContent="Auto-scan: ON";btn.style.opacity="0.7";
-  }
-}
-// tap a monitored conjunction -> load it into the primary + simulator and assess
-async function loadMonitorConjunction(pnorad,snorad,sname,missKm,tcaH){
-  const sel=document.getElementById("sat");
-  let opt=[...sel.options].find(o=>o.value==pnorad);
-  document.getElementById("telemetry").style.display="flex";
-  const out=document.getElementById("result");
-  if(!opt){
-    out.innerHTML='<div class="kv"><span class="k">Conjunction</span><span class="v" style="font-size:11px">NORAD '+
-      pnorad+' \u00d7 '+sname+'</span></div>'+
-      '<div class="kv"><span class="k">Miss distance</span><span class="v">'+Number(missKm).toFixed(3)+' km</span></div>'+
-      '<div class="kv"><span class="k">Time to TCA</span><span class="v">'+Number(tcaH).toFixed(1)+' h</span></div>'+
-      '<div class="muted" style="margin-top:8px">This conjunction was detected by the monitor, but '+
-      'NORAD '+pnorad+' has no Phase-6 calibrated state, so the full maneuver-planning pipeline '+
-      '(which needs precise orbit truth) can\u2019t run on it. The detection geometry above is from the '+
-      'live catalog screen. Maneuver planning is available for the calibrated fleet (the Sentinels).</div>';
-    return;
-  }
-  sel.value=pnorad;
-  await loadOrbit();
-  document.getElementById("miss").value=Math.max(missKm,0.01).toFixed(3);
-  document.getElementById("tca").value=Math.max(tcaH,0.5).toFixed(1);
-  out.innerHTML=
-    '<div class="muted">ISDMAAS-detected conjunction:<br><b>NORAD '+pnorad+
-    '</b> \u00d7 '+sname+'<br>miss '+Number(missKm).toFixed(3)+' km \u00b7 TCA in '+Number(tcaH).toFixed(1)+
-    ' h<br><br>Running assessment\u2026</div>';
-  window._socratesPcPending=null;
-  await runPlan();
-}
-
-async function loadSocrates(){
-  const scope=document.getElementById("socrScope").value;
-  const order=document.getElementById("socrOrder").value;
-  const list=document.getElementById("socrList");
-  list.innerHTML='<div class="loading"><span class="spin"></span>Fetching CelesTrak SOCRATES\u2026</div>';
-  let url=`${API}/socrates?order=${order}&maxrows=20`;
-  if(scope==="primary"){
-    const n=document.getElementById("sat").value;
-    if(n) url+=`&norad=${n}`;
-  }
-  try{
-    const d=await (await fetch(url)).json();
-    if(d.detail){list.innerHTML='<div class="err">'+d.detail+'</div>';return;}
-    if(!d.conjunctions||!d.conjunctions.length){
-      list.innerHTML='<div class="muted">No conjunctions returned.</div>';return;}
-    let h='';
-    for(const c of d.conjunctions.slice(0,20)){
-      const risk=c.max_prob>1e-4?"CRITICAL":c.max_prob>1e-5?"HIGH":c.max_prob>1e-7?"ELEVATED":"NOMINAL";
-      const tcaInfo=fmtTCA(c.tca);
-      h+=`<div class="conj" onclick="assessSocrates(${c.p_norad},'${(c.p_name||'').replace(/'/g,'')}','${(c.s_name||'').replace(/'/g,'')}',${c.miss_km},${c.rel_speed_kms},'${(c.tca||'').replace(/'/g,'')}',${c.max_prob})">`+
-         `<div class="cn">${c.p_name} &times; ${c.s_name}</div>`+
-         `<div class="cm"><span>miss <b>${c.miss_km.toFixed(3)} km</b></span>`+
-         `<span>MaxPc ${Number(c.max_prob).toExponential(1)}</span>`+
-         `<span class="pill ${risk}" style="font-size:9px">${risk}</span></div>`+
-         `<div class="cm"><span>v ${c.rel_speed_kms.toFixed(1)} km/s</span>`+
-         (tcaInfo.label&&tcaInfo.label!=="—"?`<span>TCA ${tcaInfo.label}</span>`:'')+`</div>`+
-         (tcaInfo.countdown?`<div class="cm"><span style="color:var(--cyan)">${tcaInfo.countdown}</span></div>`:'')+
-         `</div>`;
-    }
-    list.innerHTML=h+'<div class="muted" style="margin-top:6px">'+d.count+
-      ' real conjunctions · tap one to load &amp; assess</div>';
-  }catch(e){list.innerHTML='<div class="err">'+e+' — API on :8000?</div>';}
-}
-
-// robustly parse SOCRATES TCA strings (ISO, "2026 Jun 21 14:32", "2026-06-21T...")
-// and return a clean label + countdown ("in 3h 24m" / "passed")
-function fmtTCA(raw){
-  if(!raw) return {label:"—", countdown:""};
-  const dt=_parseTCA(raw);
-  if(!dt){const s=String(raw).trim();return {label:s.length>16?s.substr(0,16):s, countdown:""};}
-  const mon=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][dt.getUTCMonth()];
-  const label=`${mon} ${String(dt.getUTCDate()).padStart(2,'0')} ${String(dt.getUTCHours()).padStart(2,'0')}:${String(dt.getUTCMinutes()).padStart(2,'0')}Z`;
-  const diff=dt.getTime()-Date.now();
-  const countdown = diff<0 ? "passed "+humanDur(-diff)+" ago" : "in "+humanDur(diff);
-  return {label, countdown};
-}
-function humanDur(ms){
-  const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000);
-  if(h>=24){const days=Math.floor(h/24);return days+"d "+(h%24)+"h";}
-  if(h>0)return h+"h "+m+"m";
-  return m+"m";
-}
-// rough dry-mass lookup for common satellite families (kg). SOCRATES does NOT
-// provide mass — it's a property of the satellite, not the conjunction — so we
-// estimate from the name. Fuel is operator-private; we use a conservative default.
-const MASS_LOOKUP=[
-  [/STARLINK/i,260],[/ONEWEB/i,150],[/IRIDIUM/i,860],[/SENTINEL-1/i,2300],
-  [/SENTINEL-2/i,1140],[/SENTINEL-3/i,1250],[/SENTINEL-6/i,1192],[/ISS|ZARYA/i,420000],
-  [/COSMOS/i,1000],[/GLOBALSTAR/i,450],[/PLANET|FLOCK|DOVE/i,5],[/LANDSAT/i,2700],
-  [/TERRA/i,5190],[/AQUA/i,2934],[/NOAA/i,1420],[/SUOMI|NPP/i,2128],[/R\/B|ROCKET/i,1500],
-];
-function estimateMass(name){
-  for(const [re,m] of MASS_LOOKUP){ if(re.test(name||"")) return m; }
-  return 1000;  // generic default
-}
-
-// click a SOCRATES row -> AUTOMATICALLY assess the REAL conjunction. Everything
-// SOCRATES knows (miss, TCA, rel velocity, Pc) is auto-filled; mass is estimated
-// from the satellite name; only fuel is an assumption (operator-private).
-async function assessSocrates(pnorad,pname,sname,missKm,relV,tcaStr,maxPc){
-  const sel=document.getElementById("sat");
-  let opt=[...sel.options].find(o=>o.value==pnorad);
-  if(!opt){opt=document.createElement("option");opt.value=pnorad;opt.textContent=pname+" ("+pnorad+")";sel.appendChild(opt);}
-  sel.value=pnorad;
-  await loadOrbit();
-  // auto-fill EVERYTHING SOCRATES provides
-  document.getElementById("miss").value=Math.max(missKm,0.01).toFixed(3);
-  const tcaInfo=fmtTCA(tcaStr);
-  let tcaHours=8;
-  const dt=_parseTCA(tcaStr);
-  if(dt){const hrs=(dt.getTime()-Date.now())/3600000; if(hrs>0)tcaHours=Math.max(0.5,Math.round(hrs*10)/10);
-    tcaRealEpoch=dt.getTime();}   // real future TCA -> enable true live countdown
-  else{tcaRealEpoch=null;}
-  document.getElementById("tca").value=tcaHours;
-  // estimate mass from the satellite name (SOCRATES doesn't give mass)
-  // remember SOCRATES's authoritative Pc so the telemetry can compare it with
-  // our engine's recomputed value (they use different covariance assumptions).
-  // Use a 'pending' slot consumed by the next runPlan call.
-  window._socratesPcPending = maxPc || null;
-  window._socratesContext = {pname, sname, miss:missKm};
-  const estMass=estimateMass(pname);
-  document.getElementById("mass").value=estMass;
-  const fuel=document.getElementById("fuel").value;
-  document.getElementById("telemetry").style.display="flex";
-  document.getElementById("result").innerHTML=
-    '<div class="muted">Real SOCRATES conjunction \u2014 auto-loaded:<br>'+
-    '<b>'+pname+'</b> \u00d7 '+sname+'<br>'+
-    'miss '+missKm.toFixed(3)+' km \u00b7 v '+relV.toFixed(1)+' km/s'+
-    (maxPc?'<br>SOCRATES MaxPc '+Number(maxPc).toExponential(1):'')+
-    '<br>TCA '+tcaInfo.label+(tcaInfo.countdown?' ('+tcaInfo.countdown+')':'')+
-    '<br><span style="color:var(--faint)">mass ~'+estMass+' kg (estimated from name) \u00b7 '+
-    'fuel '+fuel+' kg (assumed \u2014 operator-private)</span>'+
-    '<br><br>Running ISDMAAS assessment\u2026</div>';
-  await runPlan();
-}
-// shared TCA parser (used by fmtTCA and assessSocrates)
-function _parseTCA(raw){
-  if(!raw) return null;
-  let s=String(raw).trim();
-  let dt=new Date(s);
-  if(isNaN(dt)){
-    const m=s.match(/(\d{4})\s+(\w{3})\s+(\d{1,2})\s+(\d{1,2}):(\d{2})/);
-    if(m){const months={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
-      dt=new Date(Date.UTC(+m[1],months[m[2]]||0,+m[3],+m[4],+m[5]));}
-  }
-  return isNaN(dt)?null:dt;
-}
-
-// ===================== HOVER TOOLTIPS (raycaster) =====================
-let raycaster, mouseNDC, hoverEnabled=true, lastHoverIdx=-1;
-function initHover(){
-  raycaster=new THREE.Raycaster();
-  raycaster.params.Points={threshold:120};   // pick radius in km for point-like meshes
-  mouseNDC=new THREE.Vector2(-2,-2);
-  const cv=document.getElementById("scene");
-  cv.addEventListener("mousemove",e=>{
-    const r=cv.getBoundingClientRect();
-    mouseNDC.x=((e.clientX-r.left)/r.width)*2-1;
-    mouseNDC.y=-((e.clientY-r.top)/r.height)*2+1;
-    window._mx=e.clientX; window._my=e.clientY;
-  });
-  cv.addEventListener("mouseleave",()=>{mouseNDC.set(-2,-2);hideTooltip();});
-}
-function hideTooltip(){const t=document.getElementById("tooltip");if(t)t.style.display="none";lastHoverIdx=-1;}
-function updateHover(){
-  if(!raycaster||!hoverEnabled){return;}
-  const tt=document.getElementById("tooltip");
-  // build the set of hoverable meshes: live objects + primary/threat dots
-  const targets=[];
-  for(const o of liveSats) targets.push(o.mesh);
-  if(primaryDot){primaryDot.userData._info={name:"PRIMARY",type:"PAYLOAD",norad:null};targets.push(primaryDot);}
-  if(threatDot){threatDot.userData._info={name:"THREAT",type:"DEBRIS",norad:null};targets.push(threatDot);}
-  if(!targets.length){hideTooltip();return;}
-  raycaster.setFromCamera(mouseNDC,camera);
-  const hits=raycaster.intersectObjects(targets,false);
-  if(hits.length){
-    const m=hits[0].object;
-    // find the live object that owns this mesh
-    const lo=liveSats.find(o=>o.mesh===m);
-    const info=lo?{name:lo.name,type:lo.type,norad:lo.norad,
-      apo:lo.apogee_km,per:lo.perigee_km}:m.userData._info;
-    if(info){
-      const typeClass=info.type==="ROCKET BODY"?"RB":(info.type||"PAYLOAD");
-      let h=`<div class="tname">${info.name||"object"}</div>`;
-      if(info.norad)h+=`<div class="tmeta">NORAD ${info.norad}</div>`;
-      if(info.apo&&info.per)h+=`<div class="tmeta">alt ${Math.round(info.per)}–${Math.round(info.apo)} km</div>`;
-      h+=`<span class="ttype ${typeClass}">${info.type||""}</span>`;
-      tt.innerHTML=h;
-      tt.style.display="block";
-      tt.style.left=(window._mx+14)+"px";
-      tt.style.top=(window._my+14)+"px";
-    }
-  } else {
-    hideTooltip();
-  }
-}
-
-// ===================== MANUAL REFRESH =====================
-// No background timer. Data is fully synced on startup, and the user can click
-// the refresh button (top bar) any time to re-pull the latest live data.
-let currentLiveGroup=null;
-function startLiveRefresh(group){ currentLiveGroup=group; }  // just remember the group
-
-async function manualRefresh(){
-  const icon=document.getElementById("refreshicon");
-  const txt=document.getElementById("synctxt"), led=document.getElementById("syncled");
-  if(icon)icon.style.transition="transform .6s", icon.style.transform="rotate(360deg)";
-  txt.textContent="REFRESHING…"; led.style.background="var(--amber)";
-  try{
-    // 1. re-pull the server-side catalog cache
-    await fetch(`${API}/sync-now`,{method:"POST"});
-    // 2. if live tracking is active, reload the objects with fresh elements
-    if(currentLiveGroup && liveSats.length){
-      await loadLive();   // re-fetches /live/catalog with the latest TLEs
-    }
-    // 3. update the freshness badge
-    const s=await (await fetch(`${API}/sync-status`)).json();
-    const t=s.last_sync.catalog;
-    if(t){const d=new Date(t);txt.textContent="DATA "+d.toISOString().substr(11,5)+"Z";
-      led.style.background="var(--green)";}
-    const ls=document.getElementById("livestat");
-    if(ls&&liveSats.length)ls.textContent="\u25CF LIVE \u00b7 "+liveSats.length+" objects \u00b7 "+currentLiveGroup+" \u00b7 just refreshed";
-  }catch(e){txt.textContent="REFRESH FAILED";led.style.background="var(--red)";}
-  if(icon)setTimeout(()=>{icon.style.transition="none";icon.style.transform="rotate(0deg)";},650);
-}
-async function loadLibrary(){
-  const tree=document.getElementById("libraryTree");
-  try{
-    const d=await (await fetch(`${API}/library`)).json();
-    let h='';
-    for(const [cat,items] of Object.entries(d.categories)){
-      const cid="cat_"+cat.replace(/[^a-z0-9]/gi,"");
-      h+=`<div class="libcat" id="${cid}"><div class="cathd" onclick="document.getElementById('${cid}').classList.toggle('open')">`+
-         `<span class="caret">▶</span> ${cat} <span class="muted">(${items.length})</span></div><div class="libitems">`;
-      for(const it of items){
-        h+=`<div class="libev" onclick="showEvent('${it.key}')">`+
-           `<span class="qd ${it.data_quality}"></span><span>${it.title}</span></div>`;
-      }
-      h+=`</div></div>`;
-    }
-    tree.innerHTML=h;
-    // open the first category by default
-    const first=tree.querySelector(".libcat");if(first)first.classList.add("open");
-  }catch(e){tree.innerHTML='<div class="muted">Library unavailable — start the API on :8000.</div>';}
-}
-
-async function showEvent(key){
-  const det=document.getElementById("eventDetail");
-  det.innerHTML='<div class="loading"><span class="spin"></span>Loading event…</div>';
-  try{
-    const ev=await (await fetch(`${API}/library/${key}`)).json();
-    const q=ev.data_quality;
-    const qlabel={quantified:"FULL REPLAY DATA",partial:"PARTIAL DATA (some public)",record_only:"RECORD ONLY (geometry not public)"}[q];
-    let h=`<span class="evtag ${q}">${qlabel}</span>`;
-    h+=`<div class="kv"><span class="k">Event</span><span class="v">${ev.title}</span></div>`;
-    if(ev.date_utc)h+=`<div class="kv"><span class="k">Date</span><span class="v">${ev.date_utc.substr(0,10)}</span></div>`;
-    h+=`<div class="kv"><span class="k">Outcome</span><span class="v" style="font-size:10px">${ev.outcome}</span></div>`;
-    h+=`<div class="evfact">${ev.public_facts}</div>`;
-    h+=`<div class="evsrc">Sources: ${(ev.sources||[]).join("; ")}</div>`;
-
-    if(q==="quantified" || q==="partial"){
-      // show whatever real geometry exists, mark nulls honestly
-      const g=ev.geometry||{};
-      h+='<div style="height:8px"></div>';
-      if(g.final_pc!=null)h+=`<div class="kv"><span class="k">Documented Pc</span><span class="v">${sci(g.final_pc)}</span></div>`;
-      if(g.esa_threshold_pc!=null)h+=`<div class="kv"><span class="k">Operator threshold</span><span class="v">${sci(g.esa_threshold_pc)}</span></div>`;
-      if(g.socrates_pc!=null)h+=`<div class="kv"><span class="k">Public SOCRATES Pc</span><span class="v">${sci(g.socrates_pc)}</span></div>`;
-      if(g.altitude_km!=null)h+=`<div class="kv"><span class="k">Intercept altitude</span><span class="v">~${g.altitude_km} km</span></div>`;
-      if(g.altitude_raise_m!=null)h+=`<div class="kv"><span class="k">Documented maneuver</span><span class="v">+${g.altitude_raise_m} m altitude</span></div>`;
-      if(g.rel_velocity_kms!=null)h+=`<div class="kv"><span class="k">Rel. velocity</span><span class="v">${g.rel_velocity_kms} km/s</span></div>`;
-      if(g.miss_km!=null)h+=`<div class="kv"><span class="k">Miss distance</span><span class="v">${g.miss_km} km</span></div>`;
-      else if("miss_km" in g)h+=`<div class="kv"><span class="k">Miss distance</span><span class="v" style="color:var(--faint)">not public</span></div>`;
-      if(g.dv_ms===null && "dv_ms" in g)h+=`<div class="kv"><span class="k">Maneuver Δv</span><span class="v" style="color:var(--faint)">not public (CDM)</span></div>`;
-      // route the replay by mode: conjunction (collision), debris_cloud (ASAT)
-      const mode=ev.replay_mode||"conjunction";
-      if(mode==="conjunction" && ev.primary && ev.primary.norad){
-        h+=`<button class="histbtn" onclick="replayConjunction('${key}',${ev.primary.norad})" style="margin-top:10px">⚠ Run ISDMAAS replay</button>`;
-      } else if(mode==="debris_cloud" && ev.debris_group){
-        h+=`<button class="histbtn" onclick="replayDebrisCloud('${ev.debris_group}','${ev.title.replace(/'/g,'')}')" style="margin-top:10px">&#128752; Visualize debris cloud (live)</button>`;
-      }
-      if(ev.replay_note)h+=`<div class="muted" style="margin-top:8px">${ev.replay_note}</div>`;
-    } else {
-      // record_only: NO numbers, explain why
-      h+=`<div class="muted" style="margin-top:10px;padding:8px;border:1px solid var(--line2);border-radius:7px">`+
-         `Full replay requires per-event conjunction geometry (miss distance, Pc, covariance) from a `+
-         `Conjunction Data Message. These are operator-restricted and not publicly released for this event, `+
-         `so it is listed as a documented record without fabricated numbers.</div>`;
-    }
-    det.innerHTML=h;
-  }catch(e){det.innerHTML='<div class="err">'+e+'</div>';}
-}
-
-// CONJUNCTION replay (collision events with two trackable objects)
-async function replayConjunction(key,norad){
-  document.getElementById("telemetry").style.display="flex";
-  const out=document.getElementById("result");
-  out.innerHTML='<div class="loading"><span class="spin"></span>Running ISDMAAS replay…</div>';
-  let gotOrbit=false;
-  try{
-    const od=await (await fetch(API+"/orbit/"+norad+"?points=240")).json();
-    if(od.track_km){primaryTrack=od.track_km;gotOrbit=true;
-      primaryOrbit=drawOrbit(primaryTrack,0x3d8bff,primaryOrbit,true);
-      if(!primaryDot)primaryDot=mkDot(0x3d8bff,200);
-      const rmax=Math.max(...primaryTrack.map(p=>Math.hypot(p[0],p[1],p[2])));camR=rmax*3.4;updateCam();}
-  }catch(e){}
-  try{
-    const d=await (await fetch(API+"/autonomous",{method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({primary_norad:norad,mode:"historical",event_key:key,
-        sat_mass_kg:1000,fuel_available_kg:10})})).json();
-    if(d.detail){
-      // primary not in catalog/state — show the documented assessment without 3D
-      out.innerHTML='<div class="kv"><span class="k">Note</span><span class="v" style="font-size:10px;color:var(--amber)">'+
-        d.detail+'</span></div><div class="muted" style="margin-top:8px">This event\u2019s '+
-        'objects are no longer in the active catalog, so a live-orbit replay isn\u2019t available. '+
-        'The documented facts are shown in the library panel.</div>';
-      return;}
-    if(gotOrbit && primaryTrack.length){
-      threatTrack=rotatePlane(primaryTrack,14,8);
-      threatOrbit=drawOrbit(threatTrack,0xf4506a,threatOrbit,true);
-      if(!threatDot)threatDot=mkDot(0xf4506a,180);
-      if(tcaMarker)scene.remove(tcaMarker);
-      tcaMarker=new THREE.Mesh(new THREE.RingGeometry(380,520,32),
-        new THREE.MeshBasicMaterial({color:0xfbbf24,side:THREE.DoubleSide,transparent:true,opacity:.85}));
-      tcaMarker.position.copy(new THREE.Vector3(...primaryTrack[0]));tcaMarker.lookAt(0,0,0);scene.add(tcaMarker);
-      const cp=primaryTrack[0];
-      primaryEllip=mkEllipsoid(cp,0x3d8bff,[1600,600,600],primaryEllip);
-      threatEllip=mkEllipsoid(cp,0xf4506a,[2200,900,900],threatEllip);
-      tcaSeconds=(d.threat.tca_h||8)*3600;tcaStart=Date.now();tcaRealEpoch=null;
-      document.getElementById("clock").style.display="block";
-    }
-    const h0=d.historical||{};const pm=d.pre_maneuver||{};const r=d.recommendation;
-    let h='<div class="kv"><span class="k">Event</span><span class="v">'+(h0.outcome||"")+'</span></div>';
-    h+='<div class="kv"><span class="k">Threat</span><span class="v">'+d.threat.name+'</span></div>';
-    h+='<div class="kv"><span class="k">Miss (documented)</span><span class="v">'+d.threat.miss_km+' km</span></div>';
-    if(pm.pc!=null)h+='<div class="kv"><span class="k">ISDMAAS Pc</span><span class="v">'+sci(pm.pc)+' '+pill(pm.risk_level)+'</span></div>';
-    if(r&&typeof r==="object"){
-      h+='<div style="height:8px"></div><div class="hd" style="margin:6px 0 8px">Recommended Avoidance</div>';
-      h+='<div class="kv"><span class="k">Burn \u0394v</span><span class="v big">'+r.dv_magnitude_ms.toFixed(3)+' <span style="font-size:11px">m/s</span></span></div>';
-      h+='<div class="kv"><span class="k">Outcome</span><span class="v">'+r.predicted_new_miss_km.toFixed(1)+' km <span class="arrow">\u2192</span> '+sci(r.predicted_new_pc)+'</span></div>';
-    }
-    h+='<div class="verdict '+(d.verdict||"NO_ACTION")+'">'+(d.autonomous_action==="EXECUTED"?"AVOIDANCE VALIDATED":d.verdict||"")+'</div>';
-    h+='<div class="muted" style="margin-top:6px">ISDMAAS assessment on documented geometry; not detection from public TLEs.</div>';
-    out.innerHTML=h;
-  }catch(e){out.innerHTML='<div class="err">'+e+'</div>';}
-}
-
-// DEBRIS-CLOUD replay (ASAT/breakup events — the satellite is destroyed; show the
-// real debris fragments it created, which ARE trackable today)
-async function replayDebrisCloud(group, title){
-  // switch the live-tracking group selector to this debris group and load it
-  const sel=document.getElementById("group");
-  if(sel){[...sel.options].forEach(o=>{if(o.value===group)sel.value=group;});}
-  document.getElementById("telemetry").style.display="flex";
-  const out=document.getElementById("result");
-  out.innerHTML='<div class="loading"><span class="spin"></span>Loading real debris cloud…</div>';
-  document.getElementById("group").value=group;
-  await loadLive();   // loads + animates the real debris fragments
-  const n=liveSats.length;
-  out.innerHTML='<div class="kv"><span class="k">Event</span><span class="v" style="font-size:11px">'+title+'</span></div>'+
-    '<div class="kv"><span class="k">Debris group</span><span class="v">'+group+'</span></div>'+
-    '<div class="kv"><span class="k">Fragments tracked</span><span class="v big">'+n+'</span></div>'+
-    '<div class="muted" style="margin-top:8px">These are the REAL tracked debris fragments this '+
-    'event created, propagating live now. The parent satellite was destroyed, so there is no live '+
-    'orbit to replay \u2014 the debris cloud is the lasting signature.</div>';
-}
-
-// ===================== AUTO-SYNC ON STARTUP =====================
-async function autoSync(){
-  const led=document.getElementById("syncled"), txt=document.getElementById("synctxt");
-  txt.textContent="SYNCING…"; led.style.background="var(--amber)";
-  try{
-    await fetch(`${API}/sync-now`,{method:"POST"});
-    const s=await (await fetch(`${API}/sync-status`)).json();
-    const t=s.last_sync.catalog;
-    if(t){const d=new Date(t);txt.textContent="DATA "+d.toISOString().substr(11,5)+"Z";
-      led.style.background="var(--green)";}
-    else{txt.textContent="SYNC IDLE";led.style.background="var(--dim)";}
-  }catch(e){txt.textContent="SYNC OFFLINE";led.style.background="var(--red)";}
-}
-
-async function init(){
-  initScene();
-  setInterval(()=>{const d=new Date();
-    document.getElementById("utc").textContent=d.toISOString().substr(11,8)+" UTC";},1000);
-  try{
-    const h=await (await fetch(API+"/health")).json();
-    document.getElementById("apiled").classList.add("on");
-    document.getElementById("apitxt").textContent="LINK ACTIVE";
-    const sats=await (await fetch(API+"/satellites")).json();
-    const sel=document.getElementById("sat");
-    for(const[n,info]of Object.entries(sats)){const o=document.createElement("option");
-      o.value=n;o.textContent=info.name+(info.state_available?"":" \u00b7 no state");sel.appendChild(o);}
-    loadLibrary();
-    autoSync();
-    loadOrbit();
-  }catch(e){document.getElementById("apitxt").textContent="OFFLINE \u00b7 start uvicorn :8000";}
-}
-
-async function loadOrbit(){
-  const norad=document.getElementById("sat").value;
-  try{
-    const d=await (await fetch(API+"/orbit/"+norad+"?points=240")).json();
-    primaryTrack=d.track_km;
-    primaryOrbit=drawOrbit(primaryTrack,0x3d8bff,primaryOrbit,true);
-    if(!primaryDot)primaryDot=mkDot(0x3d8bff,200);
-    if(threatOrbit){scene.remove(threatOrbit);threatOrbit=null;threatTrack=[]}
-    if(postOrbit){scene.remove(postOrbit);postOrbit=null}
-    if(tcaMarker){scene.remove(tcaMarker);tcaMarker=null}
-    if(primaryEllip){scene.remove(primaryEllip);if(primaryEllip.userData.glow)scene.remove(primaryEllip.userData.glow);primaryEllip=null}
-    if(threatEllip){scene.remove(threatEllip);if(threatEllip.userData.glow)scene.remove(threatEllip.userData.glow);threatEllip=null}
-    tcaSeconds=null;document.getElementById("clock").style.display="none";
-    const rmax=Math.max(...primaryTrack.map(p=>Math.hypot(p[0],p[1],p[2])));
-    camR=rmax*3.4;camPhi=1.05;updateCam();
-  }catch(e){console.log(e)}
-}
-
-const sci=x=>Number(x).toExponential(2);
-const pill=r=>'<span class="pill '+r+'">'+r+'</span>';
-
-async function resolveSat(){
-  const q=document.getElementById("query").value.trim();
-  const msg=document.getElementById("resolveMsg");
-  if(!q){msg.textContent="Enter a NORAD id, name, or COSPAR id.";return;}
-  msg.style.color="var(--cyan)";msg.textContent="Resolving \u201c"+q+"\u201d\u2026";
-  try{
-    const d=await (await fetch(API+"/resolve?q="+encodeURIComponent(q))).json();
-    if(d.candidates){
-      msg.style.color="var(--amber)";
-      msg.innerHTML="Multiple matches \u2014 type a more specific name:<br>"+
-        d.candidates.map(c=>c.name+" ("+c.norad+")").join("<br>");
-      return;
-    }
-    if(!d.norad){msg.style.color="var(--red)";msg.textContent=d.detail||"not found";return;}
-    const sel=document.getElementById("sat");
-    let opt=[...sel.options].find(o=>o.value==d.norad);
-    if(!opt){opt=document.createElement("option");opt.value=d.norad;
-      opt.textContent=d.name+" ("+d.norad+")";sel.appendChild(opt);}
-    sel.value=d.norad;
-    msg.style.color="var(--green)";
-    msg.textContent="\u2713 "+d.name+" \u00b7 NORAD "+d.norad+" \u00b7 matched by "+d.matched_by;
-    await loadOrbit();
-  }catch(e){msg.style.color="var(--red)";msg.textContent="Error: "+e;}
-}
-
-async function runPlan(){
-  // consume the SOCRATES Pc if this run was triggered from a SOCRATES tap;
-  // a manual simulator run has no pending value, so clear the comparison.
-  window._socratesPc = window._socratesPcPending != null ? window._socratesPcPending : null;
-  window._socratesPcPending = null;
-  const norad=parseInt(document.getElementById("sat").value);
-  const body={primary_norad:norad,synthetic_miss_km:parseFloat(miss.value),
-    tca_hours:parseFloat(tca.value),sat_mass_kg:parseFloat(mass.value),
-    fuel_available_kg:parseFloat(fuel.value)};
-  document.getElementById("telemetry").style.display="flex";
-  const out=document.getElementById("result");
-  out.innerHTML='<div class="loading"><span class="spin"></span>Planning &amp; validating \u00b7 catalog re-screen\u2026</div>';
-  planBtn.disabled=true;
-  try{
-    const resp=await fetch(API+"/maneuver-plan",{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    const d=await resp.json();
-    if(!resp.ok||d.detail||!d.pre_maneuver){
-      out.innerHTML='<div class="err">'+(d.detail||"error")+'</div>';planBtn.disabled=false;return;}
-
-    if(primaryTrack.length){
-      threatTrack=rotatePlane(primaryTrack,14,8);
-      threatOrbit=drawOrbit(threatTrack,0xf4506a,threatOrbit,true);
-      if(!threatDot)threatDot=mkDot(0xf4506a,180);
-      if(tcaMarker)scene.remove(tcaMarker);
-      tcaMarker=new THREE.Mesh(new THREE.RingGeometry(380,520,32),
-        new THREE.MeshBasicMaterial({color:0xfbbf24,side:THREE.DoubleSide,transparent:true,opacity:.85}));
-      tcaMarker.position.copy(new THREE.Vector3(...primaryTrack[0]));
-      tcaMarker.lookAt(0,0,0);scene.add(tcaMarker);
-      if(isFinite(d.recommendation&&d.recommendation.predicted_new_miss_km)){
-        const lift=1.012;
-        const post=primaryTrack.map(p=>[p[0]*lift,p[1]*lift,p[2]*lift]);
-        postOrbit=drawOrbit(post,0x34d399,postOrbit,true);
-      }
-      tcaSeconds=body.tca_hours*3600;tcaStart=Date.now();
-      document.getElementById("clock").style.display="block";
-      const cs2=document.getElementById("clocksub");
-      if(cs2)cs2.textContent=tcaRealEpoch!==null?"real conjunction \u00b7 live countdown":"what-if scenario \u00b7 accelerated view";
-    }
-
-    const pm=d.pre_maneuver;let h='';
-    h+='<div class="kv"><span class="k">Threat</span><span class="v">'+d.secondary+'</span></div>';
-    h+='<div class="kv"><span class="k">Miss distance</span><span class="v">'+pm.miss_distance_km.toFixed(3)+' km</span></div>';
-    // For a SOCRATES conjunction, SOCRATES's Pc (computed with the real orbital
-    // covariance) is the authoritative risk number. Our engine's Pc currently
-    // assumes a precise-orbit covariance calibrated for Sentinel POD, which is
-    // far too tight for arbitrary TLE-tracked objects — so we headline SOCRATES's
-    // value and flag ours as pending TLE-scale covariance calibration.
-    if(window._socratesPc!=null){
-      const sp=Number(window._socratesPc);
-      const sRisk=sp>1e-4?"CRITICAL":sp>1e-5?"HIGH":sp>1e-7?"ELEVATED":"NOMINAL";
-      h+='<div class="kv"><span class="k">Collision Pc (SOCRATES)</span><span class="v">'+sci(sp)+' &nbsp;'+pill(sRisk)+'</span></div>';
-      h+='<div class="muted" style="margin:4px 0 8px;font-size:10px;line-height:1.4">SOCRATES Pc uses the '+
-         'real orbital covariance and is the authoritative risk value for this conjunction. '+
-         '(ISDMAAS internal Pc = '+sci(pm.pc)+', computed with a precise-orbit covariance not yet '+
-         'calibrated for TLE-tracked objects — SOCRATES\u2019s value governs the decision here.)</div>';
-    } else {
-      h+='<div class="kv"><span class="k">Collision Pc</span><span class="v">'+sci(pm.pc)+' &nbsp;'+pill(pm.risk_level)+'</span></div>';
-    }
-
-    if(d.verdict==="NO_ACTION"){
-      const PC_THRESH=1e-4;  // standard maneuver threshold (ESA/NASA)
-      // honest case: SOCRATES says risky but our engine (uncalibrated cov) says safe
-      if(window._socratesPc!=null && Number(window._socratesPc)>1e-5){
-        // compute a realistic next-review from how close the actual TCA is
-        const tcaH=parseFloat(tca.value)||24;
-        let nextRev;
-        if(tcaH<=3)      nextRev="within 1 hour \u2014 TCA is close ("+tcaH.toFixed(1)+" h)";
-        else if(tcaH<=12)nextRev="in "+Math.max(1,Math.round(tcaH/3))+" h (re-screen before TCA)";
-        else if(tcaH<=36)nextRev="in 6 h, then track to TCA ("+tcaH.toFixed(0)+" h)";
-        else             nextRev="in 12 h \u2014 ample lead time ("+tcaH.toFixed(0)+" h to TCA)";
-        h+='<div class="decblock review">';
-        h+='<div class="decrow"><span class="deck">Decision</span><span class="decv review-t">REVIEW</span></div>';
-        h+='<div class="decrow"><span class="deck">Reason</span><span class="decv2">SOCRATES Pc ('+sci(Number(window._socratesPc))+') exceeds threshold; ISDMAAS covariance not calibrated for TLE objects</span></div>';
-        h+='<div class="decrow"><span class="deck">Authority</span><span class="decv2">SOCRATES (real covariance) governs</span></div>';
-        h+='<div class="decrow"><span class="deck">Time to TCA</span><span class="decv2">'+tcaH.toFixed(1)+' h</span></div>';
-        h+='<div class="decrow"><span class="deck">Next review</span><span class="decv2">'+nextRev+'</span></div>';
-        h+='</div>';
-      } else {
-        // standard monitor: explain WHY no maneuver, when to re-check, confidence
-        const pc=pm.pc, miss=pm.miss_distance_km;
-        const margin=pc>0?(PC_THRESH/pc):Infinity;  // how far below threshold
-        // confidence from how clear-cut it is + time to TCA
-        const tcaH=parseFloat(tca.value)||24;
-        let conf, confReason;
-        if(margin>100||miss>5){conf="High";confReason="Pc well below threshold";}
-        else if(margin>10){conf="Medium";confReason="Pc below threshold with margin";}
-        else{conf="Low";confReason="Pc near threshold \u2014 watch closely";}
-        // next review: sooner if close to threshold or TCA is near
-        let nextRev;
-        if(tcaH<6){nextRev="1 hour (TCA approaching)";}
-        else if(margin<10){nextRev="2 hours (margin thin)";}
-        else{nextRev="6 hours";}
-        h+='<div class="decblock monitor">';
-        h+='<div class="decrow"><span class="deck">Decision</span><span class="decv monitor-t">MONITOR</span></div>';
-        h+='<div class="decrow"><span class="deck">Reason</span><span class="decv2">Pc '+sci(pc)+' is below the maneuver threshold ('+sci(PC_THRESH)+')'+
-           (isFinite(margin)?' by ~'+(margin>=10?Math.round(margin):margin.toFixed(1))+'\u00d7':'')+'</span></div>';
-        h+='<div class="decrow"><span class="deck">Miss distance</span><span class="decv2">'+miss.toFixed(3)+' km</span></div>';
-        h+='<div class="decrow"><span class="deck">Next review</span><span class="decv2">'+nextRev+'</span></div>';
-        h+='<div class="decrow"><span class="deck">Confidence</span><span class="decv2">'+conf+' \u2014 '+confReason+'</span></div>';
-        h+='</div>';
-      }
-      out.innerHTML=h;planBtn.disabled=false;
-      tcaSeconds=null;document.getElementById("clock").style.display="none";return;}
-
-    const r=d.recommendation;
-    // ---- DECISION banner ----
-    h+='<div class="manbanner"><div class="manbanner-l">PLAN MANEUVER</div>'+
-       '<div class="manbanner-r">READY FOR APPROVAL</div></div>';
-    // reason for the maneuver decision
-    const PC_THRESH=1e-4;
-    h+='<div class="decblock plan" style="margin-top:8px"><div class="decrow"><span class="deck">Reason</span>'+
-       '<span class="decv2">Pc '+sci(pm.pc)+' exceeds the operator maneuver threshold ('+sci(PC_THRESH)+')</span></div></div>';
-    // ---- recommended maneuver ----
-    h+='<div class="hd" style="margin:10px 0 8px">Recommended Maneuver</div>';
-    h+='<div class="kv"><span class="k">Burn \u0394v</span><span class="v big">'+r.dv_magnitude_ms.toFixed(3)+' <span style="font-size:11px">m/s</span></span></div>';
-    h+='<div class="kv"><span class="k">Direction</span><span class="v">'+r.direction+'</span></div>';
-    h+='<div class="kv"><span class="k">Execute at</span><span class="v">T\u2212'+r.burn_lead_time_h+' h before TCA</span></div>';
-    h+='<div class="kv"><span class="k">Propellant required</span><span class="v">'+r.fuel_kg.toFixed(3)+' kg</span></div>';
-    if(r.burn_duration_s!=null)h+='<div class="kv"><span class="k">Burn duration</span><span class="v">'+Number(r.burn_duration_s).toFixed(1)+' s</span></div>';
-    h+='<div class="kv"><span class="k">Expected miss</span><span class="v">'+pm.miss_distance_km.toFixed(3)+' km <span class="arrow">\u2192</span> '+r.predicted_new_miss_km.toFixed(2)+' km</span></div>';
-    h+='<div class="kv"><span class="k">Expected Pc</span><span class="v">'+sci(pm.pc)+' <span class="arrow">\u2192</span> '+sci(r.predicted_new_pc)+'</span></div>';
-    // ---- safety validation ----
-    h+='<div class="hd" style="margin:12px 0 8px">Safety Validation</div>';
-    let allPass=true;
-    for(const c of d.safety_validation.checks){
-      if(!c.pass)allPass=false;
-      h+='<div class="chk"><span class="mk '+(c.pass?"ok":"no")+'">'+(c.pass?"\u2713":"\u2715")+'</span>'+
-         c.check.replace(/_/g," ")+'</div>';
-    }
-    h+='<div class="kv" style="margin-top:6px"><span class="k">Safety check</span><span class="v">'+
-       (allPass?pill("NOMINAL")+' <span style="color:var(--green)">PASS</span>':pill("CRITICAL")+' <span style="color:var(--red)">REVIEW</span>')+'</span></div>';
-    // ---- maneuver command summary (human-readable, like a real ops console) ----
-    const execUtc=new Date(Date.now()+(parseFloat(tca.value)-r.burn_lead_time_h)*3600000);
-    h+='<div class="cmdbox"><div class="cmdhd">\u25B8 MANEUVER COMMAND (pending approval)</div>'+
-       '<div class="cmdline">Fire thrusters: <b>'+r.dv_magnitude_ms.toFixed(3)+' m/s</b> '+r.direction+'</div>'+
-       '<div class="cmdline">Execute: <b>'+execUtc.toISOString().substr(0,16).replace("T"," ")+' UTC</b>'+
-       (r.burn_duration_s!=null?' \u00b7 duration <b>'+Number(r.burn_duration_s).toFixed(1)+' s</b>':'')+'</div>'+
-       '<div class="cmdline">Result: conjunction cleared, Pc \u2192 '+sci(r.predicted_new_pc)+'</div>'+
-       '<div class="cmdnote">Decision-support recommendation. A human operator reviews and executes via the satellite\u2019s flight system \u2014 ISDMAAS does not command the spacecraft.</div></div>';
-    // ---- approve / reject (demo) ----
-    h+='<div class="row" style="margin-top:10px"><button class="ghost" onclick="approveManeuver()" id="approveBtn" style="margin-top:0;border-color:#34d399;color:#34d399">\u2713 Approve maneuver</button>'+
-       '<button class="ghost" onclick="rejectManeuver()" style="margin-top:0;border-color:#f4506a;color:#f4506a">\u2715 Reject</button></div>';
-    h+='<div class="verdict '+d.verdict+'">'+d.verdict+'</div>';
-    out.innerHTML=h;
-  }catch(e){out.innerHTML='<div class="err">'+e+'</div>';}
-  planBtn.disabled=false;
-}
-init();
-
-// ---- maneuver approval (demo: shows the operator decision step) ----
-function approveManeuver(){
-  const btn=document.getElementById("approveBtn");
-  if(btn){btn.textContent="\u2713 APPROVED \u00b7 command queued";btn.style.background="rgba(52,211,153,.2)";btn.disabled=true;}
-  const out=document.getElementById("result");
-  const note=document.createElement("div");
-  note.className="muted";note.style.cssText="margin-top:8px;color:var(--green);font-size:11px";
-  note.innerHTML="\u2713 Operator approved. In an operational deployment, the command would now be "+
-    "uplinked to the satellite\u2019s flight system at the scheduled time. ISDMAAS\u2019s role ends at the "+
-    "approved recommendation.";
-  out.appendChild(note);
-}
-function rejectManeuver(){
-  const out=document.getElementById("result");
-  const note=document.createElement("div");
-  note.className="muted";note.style.cssText="margin-top:8px;color:var(--amber);font-size:11px";
-  note.innerHTML="\u2715 Operator rejected this maneuver. ISDMAAS would re-plan with adjusted constraints "+
-    "or continue monitoring as the conjunction geometry updates.";
-  out.appendChild(note);
-}
-
-// ===================== AUTONOMOUS MODE =====================
-const SEQ_STEPS=[
-  "Show current orbit","Screen 20,000+ objects","Detect conjunction","Calculate Pc",
-  "Select \u0394v / direction / time","Validate safety","Execute maneuver","Threat resolved"];
-function buildSeq(){
-  const c=document.getElementById("seqsteps");c.innerHTML="";
-  SEQ_STEPS.forEach((t,i)=>{const d=document.createElement("div");d.className="step";d.id="step"+i;
-    d.innerHTML='<div class="n">'+(i+1)+'</div><div class="t">'+t+'</div>';c.appendChild(d);});
-}
-function seqState(i,state){const e=document.getElementById("step"+i);if(!e)return;
-  e.className="step "+state;}
-function setStage(txt,color){
-  let s=document.getElementById("stage");
-  if(!s){s=document.createElement("div");s.id="stage";s.className="ov";
-    s.style.cssText="top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(11,16,28,.92);"+
-      "backdrop-filter:blur(14px);border:1px solid #2c3c5c;border-radius:12px;padding:18px 28px;"+
-      "font-family:var(--mono);font-size:14px;text-align:center;z-index:5;min-width:300px";
-    document.body.appendChild(s);}
-  s.innerHTML='<div style="font-size:10px;letter-spacing:2px;color:#7488a8;text-transform:uppercase;margin-bottom:8px">Autonomous Loop</div>'+
-    '<div style="color:'+(color||'#39d4e8')+'">'+txt+'</div>';
-  s.style.display="block";
-}
-function hideStage(){const s=document.getElementById("stage");if(s)setTimeout(()=>s.style.display="none",1600);}
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-
-async function runAuto(){
-  const norad=parseInt(document.getElementById("sat").value);
-  document.getElementById("telemetry").style.display="flex";
-  const out=document.getElementById("result");out.innerHTML='<div class="muted">Autonomous loop running\u2026</div>';
-  document.getElementById("seq").style.display="block";buildSeq();
-  autoBtn.disabled=true;planBtn.disabled=true;
-  try{
-    seqState(0,"active");setStage("&#128752; Loading current orbit\u2026");
-    await loadOrbit();await sleep(700);seqState(0,"done");
-
-    seqState(1,"active");setStage("&#128225; Screening catalog for conjunctions\u2026");
-    const body={primary_norad:norad,mode:"auto",
-      inject_miss_km:parseFloat(miss.value),inject_tca_h:parseFloat(tca.value),
-      sat_mass_kg:parseFloat(mass.value),fuel_available_kg:parseFloat(fuel.value)};
-    const callP=fetch(API+"/autonomous",{method:"POST",
-      headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
-    await sleep(1200);seqState(1,"done");
-
-    const d=await callP;
-    if(d.detail||!d.pre_maneuver){out.innerHTML='<div class="err">'+(d.detail||"error")+'</div>';
-      autoBtn.disabled=false;planBtn.disabled=false;hideStage();return;}
-
-    seqState(2,"active");
-    const src=d.detection_source==="real_catalog"?"REAL catalog object":"simulated threat";
-    setStage("&#9888; THREAT DETECTED \u2014 "+d.threat.name+"<br><span style='font-size:11px;color:#7488a8'>"+
-      src+" \u00b7 miss "+d.threat.miss_km+" km</span>","#f4506a");
-    if(primaryTrack.length){
-      threatTrack=rotatePlane(primaryTrack,14,8);
-      threatOrbit=drawOrbit(threatTrack,0xf4506a,threatOrbit,true);
-      if(!threatDot)threatDot=mkDot(0xf4506a,180);
-      if(tcaMarker)scene.remove(tcaMarker);
-      tcaMarker=new THREE.Mesh(new THREE.RingGeometry(380,520,32),
-        new THREE.MeshBasicMaterial({color:0xfbbf24,side:THREE.DoubleSide,transparent:true,opacity:.85}));
-      tcaMarker.position.copy(new THREE.Vector3(...primaryTrack[0]));tcaMarker.lookAt(0,0,0);scene.add(tcaMarker);
-      const cp=primaryTrack[0];
-      const primaryScale=(d.covariance_source==="phase6_calibrated")?[1400,500,500]:[1800,700,700];
-      primaryEllip=mkEllipsoid(cp,0x3d8bff,primaryScale,primaryEllip);
-      threatEllip=mkEllipsoid([cp[0]*1.0,cp[1]*1.0,cp[2]*1.0],0xf4506a,[2200,900,900],threatEllip);
-      tcaSeconds=d.threat.tca_h*3600;tcaStart=Date.now();tcaRealEpoch=null;
-      document.getElementById("clock").style.display="block";
-      const cs=document.getElementById("clocksub");
-      if(cs)cs.textContent="projected lead time \u00b7 accelerated view";
-    }
-    await sleep(1400);seqState(2,d.action_required?"alert":"done");
-
-    seqState(3,"active");setStage("&#129518; Computing collision probability\u2026");
-    await sleep(900);
-    seqState(3,"done");
-
-    if(d.verdict==="NO_ACTION"){
-      setStage("&#10003; Pc below threshold \u2014 monitoring only","#34d399");
-      [4,5,6].forEach(i=>seqState(i,"done"));seqState(7,"done");
-      const pc=d.pre_maneuver.pc, miss=d.pre_maneuver.miss_distance_km;
-      const margin=pc>0?(1e-4/pc):Infinity;
-      const conf=(margin>100||miss>5)?"High":(margin>10?"Medium":"Low");
-      out.innerHTML='<div class="kv"><span class="k">Threat</span><span class="v">'+d.threat.name+'</span></div>'+
-        '<div class="decblock monitor"><div class="decrow"><span class="deck">Decision</span><span class="decv monitor-t">MONITOR</span></div>'+
-        '<div class="decrow"><span class="deck">Reason</span><span class="decv2">Pc '+sci(pc)+' below threshold ('+sci(1e-4)+')'+
-        (isFinite(margin)?' by ~'+(margin>=10?Math.round(margin):margin.toFixed(1))+'\u00d7':'')+'</span></div>'+
-        (miss!=null?'<div class="decrow"><span class="deck">Miss distance</span><span class="decv2">'+miss.toFixed(3)+' km</span></div>':'')+
-        '<div class="decrow"><span class="deck">Next review</span><span class="decv2">'+(margin<10?"2 hours":"6 hours")+'</span></div>'+
-        '<div class="decrow"><span class="deck">Confidence</span><span class="decv2">'+conf+'</span></div></div>';
-      hideStage();autoBtn.disabled=false;planBtn.disabled=false;return;}
-
-    const r=d.recommendation;
-    seqState(4,"active");
-    setStage("&#129518; Selecting \u0394v, direction &amp; burn time\u2026<br>"+
-      "<span style='font-size:11px;color:#7488a8'>"+r.dv_magnitude_ms.toFixed(3)+" m/s "+r.direction+" \u00b7 T\u2212"+r.burn_lead_time_h+" h</span>");
-    await sleep(1500);seqState(4,"done");
-
-    seqState(5,"active");setStage("&#128737; Validating fuel \u00b7 orbit \u00b7 no secondary conjunction\u2026");
-    await sleep(1500);
-    seqState(5,d.verdict==="APPROVED"?"done":"alert");
-
-    seqState(6,"active");
-    if(d.verdict==="APPROVED"){
-      setStage("&#9889; EXECUTING MANEUVER \u2014 &#916;v "+r.dv_magnitude_ms.toFixed(3)+" m/s","#34d399");
-      await animateManeuver();
-      postOrbit=drawOrbit(primaryTrack.map(p=>[p[0],p[1],p[2]]),0x34d399,postOrbit,true);
-      seqState(6,"done");
-      seqState(7,"active");
-      setStage("&#10003; THREAT RESOLVED \u2014 new miss "+r.predicted_new_miss_km.toFixed(1)+" km","#34d399");
-      await sleep(900);seqState(7,"done");
-    }else{
-      setStage("&#9888; HELD FOR REVIEW \u2014 safety check failed","#fbbf24");
-      seqState(6,"alert");
-    }
-    hideStage();
-
-    let h='';
-    h+='<div class="kv"><span class="k">Detection</span><span class="v">'+(d.detection_source==="real_catalog"?"REAL":"SIM")+'</span></div>';
-    h+='<div class="kv"><span class="k">Covariance</span><span class="v">'+(d.covariance_source==="phase6_calibrated"?"CALIBRATED":"generic")+'</span></div>';
-    h+='<div class="kv"><span class="k">Threat</span><span class="v">'+d.threat.name+'</span></div>';
-    h+='<div class="kv"><span class="k">Miss</span><span class="v">'+d.threat.miss_km+' km</span></div>';
-    h+='<div class="kv"><span class="k">Pc</span><span class="v">'+sci(d.pre_maneuver.pc)+' '+pill(d.pre_maneuver.risk_level)+'</span></div>';
-    h+='<div style="height:8px"></div><div class="hd" style="margin:6px 0 8px">Autonomous Maneuver</div>';
-    h+='<div class="kv"><span class="k">Burn &#916;v</span><span class="v big">'+r.dv_magnitude_ms.toFixed(3)+' <span style="font-size:11px">m/s</span></span></div>';
-    h+='<div class="kv"><span class="k">Execute</span><span class="v">T\u2212'+r.burn_lead_time_h+' h</span></div>';
-    h+='<div class="kv"><span class="k">Propellant</span><span class="v">'+r.fuel_kg.toFixed(3)+' kg</span></div>';
-    h+='<div class="kv"><span class="k">Outcome</span><span class="v">'+r.predicted_new_miss_km.toFixed(1)+' km <span class="arrow">\u2192</span> '+sci(r.predicted_new_pc)+'</span></div>';
-    h+='<div style="height:10px"></div><div class="hd" style="margin:6px 0 8px">Safety Validation</div>';
-    for(const c of d.safety_validation.checks)
-      h+='<div class="chk"><span class="mk '+(c.pass?"ok":"no")+'">'+(c.pass?"\u2713":"\u2715")+'</span>'+c.check.replace(/_/g," ")+'</div>';
-    h+='<div class="verdict '+d.verdict+'">'+(d.autonomous_action==="EXECUTED"?"THREAT RESOLVED \u00b7 AUTONOMOUS":d.verdict)+'</div>';
-    out.innerHTML=h;
-  }catch(e){out.innerHTML='<div class="err">'+e+'</div>';hideStage();}
-  autoBtn.disabled=false;planBtn.disabled=false;
-}
-
-async function animateManeuver(){
-  if(!primaryOrbit||!primaryTrack.length)return;
-  const steps=45;const base=primaryTrack.map(p=>[...p]);
-  for(let s=1;s<=steps;s++){
-    const lift=1+0.012*(s/steps);
-    primaryOrbit=drawOrbit(base.map(p=>[p[0]*lift,p[1]*lift,p[2]*lift]),0x3d8bff,primaryOrbit,true);
-    await sleep(18);
-  }
-  primaryTrack=base.map(p=>[p[0]*1.012,p[1]*1.012,p[2]*1.012]);
-}
-</script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/satellite.min.js"></script>
+<script src="console.js"></script>
 </body>
 </html>

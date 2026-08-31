@@ -9,6 +9,31 @@ Fixes/diagnoses:
   (C) telemetry vanishes     -> confirms reload guard is present; checks API is up
 Nothing here is destructive. It reports PASS/FAIL per item.
 """
+
+# ---------------------------------------------------------------------------
+# ARCHIVED — DO NOT RUN.
+#
+# This is a one-shot script that rewrites source files in place by string
+# substitution. Every fix it applied is now permanent in the code, and the
+# patterns it searches for no longer exist. Running it today would either do
+# nothing or corrupt a file.
+#
+# Scripts of this shape already caused one production incident: a run of
+# add_login.py appended `install_auth(app)` to phase11_api.py, a later script
+# rewrote that file from a stale .bak, and the wiring was silently lost — the
+# entire authentication surface returned 404 while the console still showed a
+# sign-in dialog. It stayed broken because nothing tested it.
+#
+# It is kept for the historical record of what was changed and why. If you need
+# to change the code, edit the code and add a test.
+# ---------------------------------------------------------------------------
+import sys as _sys
+
+print(__doc__)
+print("ARCHIVED: this patch script is disabled. See the note at the top of "
+      "this file, and phase11/README.md for the current layout.")
+_sys.exit(1)
+
 import os, sys, json, time
 from datetime import datetime, timezone
 

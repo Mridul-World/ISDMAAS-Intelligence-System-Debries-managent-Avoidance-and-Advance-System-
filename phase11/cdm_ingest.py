@@ -241,10 +241,14 @@ def assess_from_cdm(text, hbr_km=0.020):
     for o in (a, b):
         if o["r_eci_km"] is None or o["cov_eci_km2"] is None:
             raise ValueError(f"CDM object '{o.get('name')}' missing state or covariance.")
+    # CCSDS 508.0-B-1 defines the object state vectors as the states AT TCA, so
+    # the geometry is already the conjunction geometry. Re-solving for a TCA here
+    # would displace the states away from the epoch the operator's covariance was
+    # computed for, pairing a moved position with an unmoved uncertainty.
     res = assess_conjunction(
         a["r_eci_km"], a["v_eci_kms"], a["cov_eci_km2"],
         b["r_eci_km"], b["v_eci_kms"], b["cov_eci_km2"],
-        hbr_km, t_window_s=600,
+        hbr_km, tca_already_refined=True,
     )
     res["covariance_source"] = "CDM (real)"
     res["cdm_tca"] = cdm["tca"]

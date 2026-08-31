@@ -23,6 +23,25 @@ models/**/*.ckpt
 .env
 *_credentials.json
 space_track_login.txt
+# Operator accounts, password hashes and session tokens. The legacy JSON store
+# and both SQLite databases were previously committed; never track them again.
+phase11/auth_store.json
+phase11/auth_store.json.tmp
+phase11/isdmaas_ops.db
+**/isdmaas_auth.db
+**/isdmaas_auth.db-*
+**/isdmaas_ops.db
+**/isdmaas_ops.db-*
+
+# ---- Local caches (regenerated on demand, not source) ----
+phase11/data/
+# ...except the offline fallback catalog, which is public element-set data and
+# lets the console start without network access.
+!phase11/data/catalog_active.tle
+phase11/catalog_cache.json
+**/*.db-journal
+**/*.db-wal
+**/*.db-shm
 
 # ---- Backups made by patch scripts ----
 *.bak
@@ -38,3 +57,10 @@ Thumbs.db
 page-*.jpg
 test_active.txt
 test_debris.txt
+
+# ---- Trained weights produced by phase55 trainers ----
+# Per Repo Hygiene §7.1: weights go to Git LFS or an external store, never
+# straight into the repository. The JSON reports beside them are committed —
+# they are small and they are the evidence.
+phase55/model/*.pt
+!phase55/model/.gitkeep
