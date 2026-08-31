@@ -107,6 +107,13 @@ class Settings:
 
     # ------------------------------------------------------------ screening
     screen_max_hours: float = 72.0
+    # Every screening endpoint runs a full-catalog propagation. Anonymous access
+    # to them is a denial-of-service amplifier, so production requires a token
+    # by default. Development leaves them open so the console's read-only mode
+    # and the demo walkthrough keep working without a sign-in.
+    require_auth_for_compute: bool = False
+    compute_rate_limit: int = 30
+    compute_rate_window_s: int = 60
     screen_coarse_step_s: float = 30.0
     catalog_ttl_s: int = 6 * 3600
     hbr_km: float = 0.020
@@ -213,6 +220,10 @@ def load_settings() -> Settings:
         login_rate_window_s=_env_int("ISDMAAS_LOGIN_WINDOW_S", 300),
         enable_demo_seed=_env_bool("ISDMAAS_ENABLE_DEMO_SEED", not is_prod),
         screen_max_hours=_env_float("ISDMAAS_SCREEN_MAX_HOURS", 72.0),
+        require_auth_for_compute=_env_bool(
+            "ISDMAAS_REQUIRE_AUTH_FOR_COMPUTE", is_prod),
+        compute_rate_limit=_env_int("ISDMAAS_COMPUTE_RATE", 30),
+        compute_rate_window_s=_env_int("ISDMAAS_COMPUTE_WINDOW_S", 60),
         hbr_km=_env_float("ISDMAAS_HBR_KM", 0.020),
     )
     settings.ensure_dirs()

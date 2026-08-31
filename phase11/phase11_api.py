@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import numpy as np
-from fastapi import Body, FastAPI, Query, Request
+from fastapi import Body, Depends, FastAPI, Header, Query, Request
 from fastapi import Path as PathParam
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -65,7 +65,7 @@ from isdmaas_core.logging_config import (
     new_request_id,
     request_id_var,
 )
-from isdmaas_core.security import security_headers
+from isdmaas_core.security import SlidingWindowLimiter, security_headers
 from isdmaas_core.socrates import get_feed as get_socrates_feed
 from isdmaas_core.store import get_store
 
@@ -183,6 +183,51 @@ def require_catalog():
             code="service_unavailable",
         )
     return snapshot
+
+
+# ------------------------------------------------------- compute guard
+#
+# Every screening endpoint runs a full-catalog propagation: 16 000 objects
+# filtered, propagated and refined. Left anonymous and unlimited they are a
+# denial-of-service amplifier - one HTTP request costs a CPU-second, and nothing
+# stopped a caller issuing thousands.
+#
+# Two controls, deliberately separate:
+#   * a per-client rate limit, always on, so no single caller can saturate the
+#     service even when anonymous access is intended (the console's read-only
+#     mode and the demo walkthrough both rely on it);
+#   * an authentication requirement, on by default in production, so a public
+#     deployment does not hand its CPU to anonymous callers at all.
+_compute_limiter = SlidingWindowLimiter(
+    settings.compute_rate_limit, settings.compute_rate_window_s
+)
+
+
+def compute_guard(request: Request, authorization: Optional[str] = Header(None)):
+    """Rate-limit and (in production) authenticate an expensive endpoint."""
+    if settings.require_auth_for_compute:
+        from auth_store import user_from_token
+
+        if not user_from_token(authorization):
+            raise ApiError(
+                401,
+                "This endpoint runs a full-catalog screen and requires an "
+                "operator token on this deployment.",
+                code="unauthenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+    client = request.client.host if request.client else "unknown"
+    decision = _compute_limiter.hit(client)
+    if not decision.allowed:
+        raise ApiError(
+            429,
+            "Too many screening requests. Each one propagates the whole "
+            "catalog; please pace them.",
+            code="rate_limited",
+            headers={"Retry-After": str(decision.retry_after_s)},
+        )
+    return True
 
 
 def catalog_entry(snapshot, norad: int):
@@ -527,6 +572,7 @@ def _two_body(r0, v0, dt, steps=50):
 @app.get("/screen/{norad}", tags=["screening"])
 def screen(
     norad: int,
+    _guard: bool = Depends(compute_guard),
     gate_km: float = Query(default=25.0, gt=0.0, le=500.0),
     hours: float = Query(default=72.0, gt=0.0, le=168.0),
     max_results: int = Query(default=30, ge=1, le=200),
@@ -610,6 +656,7 @@ monitor_state = _MonitorState()
 
 @app.get("/monitor", tags=["screening"])
 def monitor(
+    _guard: bool = Depends(compute_guard),
     watchlist: str = Query(default="", max_length=400),
     gate_km: float = Query(default=25.0, gt=0.0, le=500.0),
     hours: float = Query(default=48.0, gt=0.0, le=168.0),
@@ -731,7 +778,7 @@ def monitor_reset():
 
 
 @app.post("/assess", tags=["screening"])
-def assess(request: AssessRequest):
+def assess(request: AssessRequest, _guard: bool = Depends(compute_guard)):
     """Risk assessment between a specific primary and secondary."""
     snapshot = require_catalog()
     primary = load_primary(request.primary_norad, snapshot)
@@ -822,7 +869,8 @@ def _synthetic_threat(primary: PrimaryState, miss_km: float, tca_hours: float):
 
 
 @app.post("/maneuver-plan", tags=["planning"])
-def maneuver_plan(request: ManeuverRequest):
+def maneuver_plan(request: ManeuverRequest,
+                  _guard: bool = Depends(compute_guard)):
     """Plan and safety-validate an avoidance burn."""
     snapshot = require_catalog()
     primary = load_primary(request.primary_norad, snapshot)
@@ -908,7 +956,8 @@ def maneuver_plan(request: ManeuverRequest):
 
 
 @app.post("/autonomous", tags=["planning"])
-def autonomous(request: AutoRequest):
+def autonomous(request: AutoRequest,
+               _guard: bool = Depends(compute_guard)):
     """
     The hands-off loop on a real satellite:
       1. load the primary state
@@ -1176,6 +1225,7 @@ def live_catalog(
 @app.get("/live/conjunctions/{norad}", tags=["screening"])
 def live_conjunctions(
     norad: int,
+    _guard: bool = Depends(compute_guard),
     range_km: float = Query(default=50.0, gt=0.0, le=500.0),
     hours: float = Query(default=24.0, gt=0.0, le=168.0),
 ):
@@ -1303,6 +1353,7 @@ _sync_lock = threading.Lock()
 
 @app.post("/sync-now", tags=["ops"])
 def sync_now(
+    _guard: bool = Depends(compute_guard),
     groups: str = Query(
         default="active,cosmos-2251-debris,cosmos-1408-debris,fengyun-1c-debris",
         max_length=400,
