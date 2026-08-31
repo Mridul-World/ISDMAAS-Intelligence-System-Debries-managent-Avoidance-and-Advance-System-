@@ -9,10 +9,19 @@ from io import StringIO
 # CONFIG
 # ======================
 
-DISCOS_TOKEN = "IjJhN2U4ZjQ0LTYzYWUtNDVhYy05ZDc5LWEwMzBjODFjYjExZCI.Kf3nkpVjdN9GvWqA5CqI-XN-roQ"
+# Credentials come from the environment. They were previously hardcoded here and
+# committed, which exposed a live Space-Track account and a DISCOS API token in
+# every commit of this repository. Never inline a credential in source: set
+# SPACETRACK_USER / SPACETRACK_PASS / DISCOS_TOKEN in your shell instead.
+DISCOS_TOKEN = os.environ.get("DISCOS_TOKEN", "")
+SPACETRACK_USER = os.environ.get("SPACETRACK_USER", "")
+SPACETRACK_PASS = os.environ.get("SPACETRACK_PASS", "")
 
-SPACETRACK_USER = "mridul1735@gmail.com"
-SPACETRACK_PASS = "RxR74SUEqXh9Nh-"
+if not (SPACETRACK_USER and SPACETRACK_PASS):
+    print("[warn] SPACETRACK_USER / SPACETRACK_PASS are unset - "
+          "Space-Track downloads will be skipped.")
+if not DISCOS_TOKEN:
+    print("[warn] DISCOS_TOKEN is unset - DISCOS enrichment will be skipped.")
 
 DATA_DIR = "ssa_data"
 os.makedirs(DATA_DIR, exist_ok=True)

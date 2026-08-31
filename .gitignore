@@ -64,3 +64,8 @@ test_debris.txt
 # they are small and they are the evidence.
 phase55/model/*.pt
 !phase55/model/.gitkeep
+
+# ---- Local credential shells (NEVER commit) ----
+dd.env
+*.env
+!.env.example

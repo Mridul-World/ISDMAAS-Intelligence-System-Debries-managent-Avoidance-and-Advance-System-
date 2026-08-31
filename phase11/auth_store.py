@@ -52,6 +52,7 @@ from isdmaas_core.security import (
     verify_password,
 )
 from isdmaas_core.store import Store, get_store
+from isdmaas_core.tle import validate_tle
 
 log = get_logger("isdmaas.auth")
 router = APIRouter(tags=["auth"])
@@ -381,22 +382,21 @@ def my_satellites(username: str = Depends(require_user)):
 @router.post("/my/satellites", status_code=201)
 def add_satellite(payload: NewSatellite, username: str = Depends(require_user)):
     line1, line2 = payload.tle1.strip(), payload.tle2.strip()
-    if not (line1.startswith("1 ") and line2.startswith("2 ")):
+
+    # Full integrity validation, not just a parse. sgp4's parser accepts a
+    # truncated line, a broken checksum, mismatched catalog numbers between the
+    # two lines, and a corrupted inclination - and then returns a propagator that
+    # produces a perfectly plausible altitude. An element set corrupted in
+    # transit would otherwise be screened and reported with full confidence.
+    report = validate_tle(line1, line2)
+    if not report.valid:
         raise ApiError(
             422,
-            "TLE lines are malformed: line 1 must start with '1 ' and line 2 "
-            "with '2 '.",
+            "This element set failed validation: " + "; ".join(report.errors),
             code="unprocessable",
+            extra={"tle_errors": report.errors},
         )
-    if len(line1) < 68 or len(line2) < 68:
-        raise ApiError(
-            422, "TLE lines must be the standard 69-character format.", "unprocessable"
-        )
-    try:
-        satrec = Satrec.twoline2rv(line1, line2)
-        norad = str(satrec.satnum)
-    except Exception as exc:
-        raise ApiError(422, f"TLE failed to parse: {exc}", "unprocessable") from exc
+    norad = str(report.norad)
 
     store = _store()
     existing = store.get_satellite(norad)
