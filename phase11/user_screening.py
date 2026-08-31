@@ -159,6 +159,34 @@ def screen_history(
     return {"norad": norad, "runs": ops_db.screening_history(norad, limit)}
 
 
+@router.get("/assessments")
+def list_assessments(
+    limit: int = Query(default=50, ge=1, le=200),
+    username: str = Depends(require_user),
+):
+    """Assessment audit trail for the calling operator, newest first."""
+    return {"operator": username, "assessments": ops_db.list_assessments(username, limit)}
+
+
+@router.get("/assessments/{assessment_id}")
+def get_assessment(assessment_id: str, username: str = Depends(require_user)):
+    """
+    One assessment in full, so a recommendation can be reconstructed later.
+
+    Scoped to the calling operator: an audit record names an operator's asset,
+    its element-set epochs and its conjunction picture, all of which are
+    commercially sensitive.
+    """
+    record = ops_db.get_assessment(assessment_id)
+    if record is None:
+        raise ApiError(404, f"Assessment {assessment_id} not found.", "not_found")
+    if record.get("operator") != username:
+        raise ApiError(
+            403, "That assessment belongs to another operator.", "forbidden"
+        )
+    return record
+
+
 def install_screening(app):
     app.include_router(router)
     return app

@@ -252,6 +252,63 @@ def user_plan(request: PlanRequest, authorization: Optional[str] = Header(None))
     response["options"] = plan["options"]
     response["safety_validation"] = report
     response["verdict"] = report["verdict"]
+
+    # Audit record. Captures the INPUTS as well as the outputs, because six
+    # months from now "why did ISDMAAS recommend this burn?" has to be
+    # answerable from the record rather than from someone's memory of what the
+    # catalog looked like that day. A failure to write it must never deny an
+    # operator their assessment, so it is best-effort and logged.
+    try:
+        import ops_db
+        from isdmaas_core import __version__ as algorithm_version
+        from isdmaas_core.tle import validate_tle
+
+        assessment_id = ops_db.new_assessment_id()
+        primary_report = validate_tle(meta_a["tle1"], meta_a["tle2"])
+        secondary_report = validate_tle(meta_b["tle1"], meta_b["tle2"])
+        ops_db.record_assessment({
+            "assessment_id": assessment_id,
+            "created_utc": start.isoformat(),
+            "operator": owner,
+            "primary_norad": request.primary_norad,
+            "primary_name": meta_a["name"],
+            "secondary_norad": request.secondary_norad,
+            "secondary_name": meta_b["name"],
+            "primary_epoch_utc": (primary_report.epoch_utc.isoformat()
+                                  if primary_report.epoch_utc else None),
+            "secondary_epoch_utc": (secondary_report.epoch_utc.isoformat()
+                                    if secondary_report.epoch_utc else None),
+            "catalog_fetched_utc": None,
+            "catalog_age_hours": primary_report.age_days * 24.0
+                                 if primary_report.age_days is not None else None,
+            "algorithm_version": algorithm_version,
+            # SGP4 alone. There is no ML model in the serving path; recording
+            # "none" is the honest value and makes that visible in every record.
+            "model_version": "none (SGP4 baseline)",
+            "covariance_source": "tle_scale_model",
+            "primary_sigma_rtn_km": list(sigma),
+            "hbr_km": settings.hbr_km,
+            "tca_utc": assessment["tca_utc"],
+            "miss_km": assessment["miss_km"],
+            "relative_speed_kms": assessment["rel_speed_kms"],
+            "pc": assessment["pc"],
+            "pc_method": "foster_2d_gauss_legendre_quadrature",
+            "risk_level": assessment["risk_level"],
+            "status": "ASSESSED" if assessment["pc"] is not None else "DATA_INVALID",
+            "recommendation_json": recommendation,
+            "safety_verdict": report["verdict"],
+            "detail_json": {
+                "options": plan["options"],
+                "safety_checks": [
+                    {"check": c["check"], "pass": c["pass"]}
+                    for c in report["checks"]
+                ],
+            },
+        })
+        response["assessment_id"] = assessment_id
+    except Exception:
+        log.warning("assessment audit record could not be written", exc_info=True)
+
     return response
 
 

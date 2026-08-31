@@ -74,6 +74,20 @@ def _conn():
         PRIMARY KEY (norad, path))""")
     c.execute("""CREATE TABLE IF NOT EXISTS training_runs(
         run_utc TEXT, n_samples INTEGER, satellites TEXT, note TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS assessments(
+        assessment_id TEXT PRIMARY KEY,
+        created_utc TEXT, operator TEXT,
+        primary_norad TEXT, primary_name TEXT,
+        secondary_norad TEXT, secondary_name TEXT,
+        primary_epoch_utc TEXT, secondary_epoch_utc TEXT,
+        catalog_fetched_utc TEXT, catalog_age_hours REAL,
+        algorithm_version TEXT, model_version TEXT,
+        covariance_source TEXT, primary_sigma_rtn_km TEXT, hbr_km REAL,
+        tca_utc TEXT, miss_km REAL, relative_speed_kms REAL,
+        pc REAL, pc_method TEXT, risk_level TEXT, status TEXT,
+        recommendation_json TEXT, safety_verdict TEXT, detail_json TEXT)""")
+    c.execute("""CREATE INDEX IF NOT EXISTS idx_assess_created
+                 ON assessments(created_utc)""")
     c.execute("""CREATE TABLE IF NOT EXISTS screening_runs(
         id INTEGER PRIMARY KEY AUTOINCREMENT, run_utc TEXT,
         norad TEXT, name TEXT, owner TEXT,
@@ -155,6 +169,98 @@ def status():
                          "ORDER BY run_utc DESC LIMIT 3").fetchall()
     return {"tles_stored": n_tle, "satellites": n_sat,
             "truth_files": n_truth, "recent_training_runs": runs}
+
+# ---------------------------------------------------------------------------
+# Assessment audit trail
+# ---------------------------------------------------------------------------
+# Every recommendation must be reconstructable after the fact. Six months later
+# an operator has to be able to answer "why did ISDMAAS recommend this burn?",
+# and the answer has to come from a record rather than from someone's memory of
+# what the catalog looked like that day.
+#
+# The record therefore captures the INPUTS as well as the outputs: which element
+# sets were used and how old they were, which covariance model, which algorithm
+# and model version, the hard-body radius. Without those, the numbers cannot be
+# reproduced and the record is decorative.
+
+ASSESSMENT_FIELDS = (
+    "assessment_id", "created_utc", "operator",
+    "primary_norad", "primary_name", "secondary_norad", "secondary_name",
+    "primary_epoch_utc", "secondary_epoch_utc",
+    "catalog_fetched_utc", "catalog_age_hours",
+    "algorithm_version", "model_version",
+    "covariance_source", "primary_sigma_rtn_km", "hbr_km",
+    "tca_utc", "miss_km", "relative_speed_kms",
+    "pc", "pc_method", "risk_level", "status",
+    "recommendation_json", "safety_verdict", "detail_json",
+)
+
+
+def new_assessment_id():
+    """A stable, sortable identifier an operator can quote."""
+    import uuid
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    return f"ASM-{stamp}-{uuid.uuid4().hex[:8]}"
+
+
+def record_assessment(record):
+    """
+    Persist one assessment. `record` is a dict keyed by ASSESSMENT_FIELDS.
+
+    Never raises into the request path: an audit-write failure must not deny an
+    operator a conjunction assessment. It is logged instead.
+    """
+    import json as _json
+
+    row = []
+    for field in ASSESSMENT_FIELDS:
+        value = record.get(field)
+        if isinstance(value, (dict, list, tuple)):
+            value = _json.dumps(value, default=str)
+        row.append(value)
+    placeholders = ",".join("?" * len(ASSESSMENT_FIELDS))
+    with _LOCK, _conn() as c:
+        c.execute(f"INSERT OR REPLACE INTO assessments VALUES ({placeholders})", row)
+    return record.get("assessment_id")
+
+
+def get_assessment(assessment_id):
+    import json as _json
+
+    with _LOCK, _conn() as c:
+        c.row_factory = sqlite3.Row
+        row = c.execute("SELECT * FROM assessments WHERE assessment_id=?",
+                        (str(assessment_id),)).fetchone()
+    if row is None:
+        return None
+    record = dict(row)
+    for field in ("recommendation_json", "detail_json"):
+        if record.get(field):
+            try:
+                record[field] = _json.loads(record[field])
+            except (ValueError, TypeError):
+                pass
+    return record
+
+
+def list_assessments(operator=None, limit=50):
+    with _LOCK, _conn() as c:
+        c.row_factory = sqlite3.Row
+        if operator:
+            rows = c.execute(
+                "SELECT assessment_id,created_utc,operator,primary_norad,"
+                "secondary_norad,miss_km,pc,risk_level,status,safety_verdict "
+                "FROM assessments WHERE operator=? ORDER BY created_utc DESC "
+                "LIMIT ?", (operator, limit)).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT assessment_id,created_utc,operator,primary_norad,"
+                "secondary_norad,miss_km,pc,risk_level,status,safety_verdict "
+                "FROM assessments ORDER BY created_utc DESC LIMIT ?",
+                (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
 
 if __name__ == "__main__":
     print("ops_db status:", status())
