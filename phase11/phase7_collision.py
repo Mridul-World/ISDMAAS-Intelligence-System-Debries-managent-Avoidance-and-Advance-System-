@@ -155,41 +155,157 @@ def project_to_plane(
     return P @ np.asarray(rel_pos, dtype=float), P @ np.asarray(C_combined, dtype=float) @ P.T
 
 
+class CovarianceError(ValueError):
+    """
+    The supplied covariance is not a usable covariance matrix.
+
+    Raised rather than absorbed. Every alternative silently produces a
+    confident, wrong probability - see validate_covariance for the measured
+    numbers.
+    """
+
+
+def validate_covariance(C: np.ndarray, name: str = "covariance") -> np.ndarray:
+    """
+    Reject a matrix that is not a valid covariance, instead of computing with it.
+
+    WHY THIS IS NOT OPTIONAL
+    ------------------------
+    The previous implementation clipped eigenvalues at 1e-12 and carried on. For
+    a 1 km miss whose true Pc with a valid covariance is 1.08e-4, that produced:
+
+        one negative eigenvalue   ->  Pc = 8.5e-1  (quadrature), 1.0 (Chan)
+        both eigenvalues negative ->  Pc = 0.0
+        all-zero matrix           ->  Pc = 0.0
+        singular (rank 1)         ->  Pc = 0.0
+        NaN entry                 ->  Pc = NaN, which is not valid JSON
+
+    Both directions are unsafe and in opposite ways. A spurious Pc of 0.85 is a
+    false alarm that would trigger an unnecessary maneuver and burn propellant;
+    a spurious Pc of 0.0 is a missed conjunction reported to the operator as
+    "safe". Neither is acceptable from a matrix that is not a covariance.
+
+    A real covariance is symmetric and positive semi-definite. Tiny negative
+    eigenvalues from floating-point round-off are legitimate and are floored;
+    the tolerance scales with the matrix norm so the distinction is between
+    round-off and a genuinely invalid input, not an absolute magnitude.
+    """
+    C = np.asarray(C, dtype=float)
+    if C.ndim != 2 or C.shape[0] != C.shape[1]:
+        raise CovarianceError(f"{name} must be a square matrix, got shape {C.shape}")
+    if not np.all(np.isfinite(C)):
+        raise CovarianceError(
+            f"{name} contains non-finite entries (NaN or infinity); the "
+            f"uncertainty is unknown, not zero"
+        )
+
+    scale = float(np.max(np.abs(C))) if C.size else 0.0
+    if scale <= 0.0:
+        raise CovarianceError(
+            f"{name} is entirely zero; a covariance of zero asserts perfect "
+            f"knowledge of the position, which no tracking system provides"
+        )
+
+    asymmetry = float(np.max(np.abs(C - C.T)))
+    if asymmetry > 1e-9 * scale:
+        raise CovarianceError(
+            f"{name} is not symmetric (max asymmetry {asymmetry:.3e} against a "
+            f"scale of {scale:.3e}); a covariance matrix is symmetric by "
+            f"definition, so this is a construction error upstream"
+        )
+
+    eigenvalues = np.linalg.eigvalsh(C)
+    tolerance = 1e-10 * scale
+    if float(np.min(eigenvalues)) < -tolerance:
+        raise CovarianceError(
+            f"{name} is not positive semi-definite (smallest eigenvalue "
+            f"{float(np.min(eigenvalues)):.3e}); it does not describe a real "
+            f"probability distribution and any Pc computed from it is meaningless"
+        )
+    if float(np.max(eigenvalues)) <= tolerance:
+        raise CovarianceError(
+            f"{name} is numerically singular in every direction; the position "
+            f"uncertainty is degenerate and Pc is not defined"
+        )
+    return C
+
+
 def _principal_frame(
     miss_2d: np.ndarray, C_2d: np.ndarray
 ) -> Tuple[float, float, np.ndarray]:
-    """Covariance principal axes: returns (sigma_x, sigma_y, miss in that frame)."""
-    eigenvalues, eigenvectors = np.linalg.eigh(np.asarray(C_2d, dtype=float))
-    # A covariance can come back with a tiny negative eigenvalue from round-off;
-    # floor it at a value far below any physically meaningful uncertainty rather
-    # than letting a NaN propagate into Pc.
+    """
+    Covariance principal axes: returns (sigma_x, sigma_y, miss in that frame).
+
+    The covariance is validated first. Eigenvalues that are negative only by
+    round-off are floored afterwards; anything worse has already been rejected.
+    """
+    C_2d = validate_covariance(C_2d, "encounter-plane covariance")
+    eigenvalues, eigenvectors = np.linalg.eigh(C_2d)
     eigenvalues = np.clip(eigenvalues, 1e-12, None)
     m = eigenvectors.T @ np.asarray(miss_2d, dtype=float)
     return float(np.sqrt(eigenvalues[0])), float(np.sqrt(eigenvalues[1])), m
 
 
 # ---------------------------------------------------------------- Pc integral
+def _radial_panels(hbr: float, scale: float, max_panels: int = 24) -> np.ndarray:
+    """
+    Panel boundaries for the radial integration, from 0 to hbr.
+
+    A single Gauss-Legendre panel across [0, hbr] fails when the covariance is
+    much tighter than the hard-body radius: the integrand becomes a needle at the
+    origin and the nodes, which cluster toward the panel ENDS, never sample it.
+    Measured: sigma = 1 mm with HBR = 20 m returned 6.2e-31 where the answer is
+    1.0, because collision is certain when the disk contains the entire
+    distribution.
+
+    Panels are therefore laid out geometrically from the covariance scale
+    outwards, so there are always several nodes across the region that carries
+    the probability mass, whatever the HBR/sigma ratio.
+    """
+    if not (scale > 0.0) or scale >= hbr:
+        return np.array([0.0, hbr])
+    edges = [0.0]
+    edge = scale * 0.25
+    while edge < hbr and len(edges) < max_panels:
+        edges.append(edge)
+        edge *= 2.0
+    edges.append(hbr)
+    return np.array(edges)
+
+
 def pc_2d_quadrature(
-    miss_2d: np.ndarray, C_2d: np.ndarray, hbr: float, n_r: int = 48, n_theta: int = 128
+    miss_2d: np.ndarray, C_2d: np.ndarray, hbr: float,
+    n_r: int = 16, n_theta: int = 128,
 ) -> float:
     """
     Pc = integral over a disk of radius HBR of N(miss_2d, C_2d).
 
-    Gauss-Legendre in radius, periodic trapezoid in angle. The angular rule is
-    spectrally accurate for a smooth periodic integrand and the radial rule is
-    exact for polynomials up to degree 2*n_r-1, so 48x128 nodes reach machine
-    precision on this integrand — far better than the 200x180 rectangle grid
-    this replaces, at a quarter of the cost.
+    Composite Gauss-Legendre in radius, periodic trapezoid in angle. The angular
+    rule is spectrally accurate for a smooth periodic integrand; the radial rule
+    is exact for polynomials up to degree 2*n_r-1 on each panel.
+
+    The radial direction is split into geometric panels (see `_radial_panels`)
+    rather than integrated in one span. That is what makes the method work
+    across the whole HBR/sigma range an operator can reach: from a 1 m hard body
+    against a 50 km covariance, where the density is flat across the disk, to a
+    tight covariance inside a large hard body, where the integrand is a needle at
+    the origin and a single-panel rule misses it entirely.
     """
     hbr = float(hbr)
     if hbr <= 0.0:
         return 0.0
     sx, sy, m = _principal_frame(miss_2d, C_2d)
 
-    # Gauss-Legendre nodes on [0, hbr] for the radial direction.
+    edges = _radial_panels(hbr, min(sx, sy))
     nodes, weights = np.polynomial.legendre.leggauss(n_r)
-    rr = 0.5 * hbr * (nodes + 1.0)
-    wr = 0.5 * hbr * weights
+    radii, radial_weights = [], []
+    for low, high in zip(edges[:-1], edges[1:]):
+        half = 0.5 * (high - low)
+        radii.append(half * (nodes + 1.0) + low)
+        radial_weights.append(half * weights)
+    rr = np.concatenate(radii)
+    wr = np.concatenate(radial_weights)
+
     th = np.linspace(0.0, 2.0 * np.pi, n_theta, endpoint=False)
     dth = 2.0 * np.pi / n_theta
 
@@ -391,7 +507,38 @@ def assess_conjunction(
     rel_speed = float(np.linalg.norm(v_rel))
     short_encounter = rel_speed >= MIN_SHORT_ENCOUNTER_SPEED_KMS
 
-    C_comb = np.asarray(C1_eci, dtype=float) + np.asarray(C2_eci, dtype=float)
+    # Validate EACH input, not only the sum. Adding a valid covariance to an
+    # invalid one can produce a sum that passes every check, so validating only
+    # the combined matrix lets a corrupt input through whenever its partner is
+    # large enough to mask it. The inputs are what the operator supplied; they
+    # are what must be trustworthy.
+    try:
+        C1 = validate_covariance(C1_eci, "primary covariance")
+        C2 = validate_covariance(C2_eci, "secondary covariance")
+    except CovarianceError as exc:
+        return {
+            "tca_s_from_epoch": tca,
+            "miss_distance_km": miss,
+            "radial_miss_km": None,
+            "binormal_miss_km": None,
+            "pc": None,
+            "pc_method": None,
+            "pc_chan_crosscheck": None,
+            "pc_methods_agree": None,
+            "mahalanobis": None,
+            "hbr_km": float(hbr_km),
+            "relative_speed_kms": rel_speed,
+            "risk_level": "DATA_INVALID",
+            "short_encounter_valid": short_encounter,
+            "covariance_valid": False,
+            "note": (
+                f"Collision probability was not computed: {exc}. The geometry "
+                f"above is still reported, but no probability can be derived "
+                f"from an invalid covariance."
+            ),
+            "encounter_plane_cov_km2": None,
+        }
+    C_comb = C1 + C2
     if not short_encounter:
         # The 2-D projection is undefined without a relative-velocity direction,
         # and meaningless when the objects linger together. Report the geometry
@@ -409,6 +556,7 @@ def assess_conjunction(
             "relative_speed_kms": rel_speed,
             "risk_level": "UNDETERMINED",
             "short_encounter_valid": False,
+            "covariance_valid": True,
             "note": (
                 "Relative speed below the short-encounter limit "
                 f"({MIN_SHORT_ENCOUNTER_SPEED_KMS * 1000:.0f} m/s): the 2-D "
@@ -419,9 +567,39 @@ def assess_conjunction(
         }
 
     miss_2d, C_2d = project_to_plane(rel_pos, C_comb, v_rel)
-    pc_quad = pc_2d_quadrature(miss_2d, C_2d, hbr_km)
-    pc_series = pc_chan(miss_2d, C_2d, hbr_km)
-    maha = mahalanobis_2d(miss_2d, C_2d)
+
+    # An invalid covariance yields no probability at all, never a number.
+    # Absorbing the failure here would hand the operator either a false alarm
+    # (a negative eigenvalue produced Pc = 0.85 for a 1 km miss) or a false
+    # reassurance (a zero or singular matrix produced Pc = 0.0). Both are worse
+    # than saying the assessment could not be made.
+    try:
+        pc_quad = pc_2d_quadrature(miss_2d, C_2d, hbr_km)
+        pc_series = pc_chan(miss_2d, C_2d, hbr_km)
+        maha = mahalanobis_2d(miss_2d, C_2d)
+    except CovarianceError as exc:
+        return {
+            "tca_s_from_epoch": tca,
+            "miss_distance_km": miss,
+            "radial_miss_km": None,
+            "binormal_miss_km": None,
+            "pc": None,
+            "pc_method": None,
+            "pc_chan_crosscheck": None,
+            "pc_methods_agree": None,
+            "mahalanobis": None,
+            "hbr_km": float(hbr_km),
+            "relative_speed_kms": rel_speed,
+            "risk_level": "DATA_INVALID",
+            "short_encounter_valid": True,
+            "covariance_valid": False,
+            "note": (
+                f"Collision probability was not computed: {exc}. The geometry "
+                f"above is still reported, but no probability can be derived "
+                f"from an invalid covariance."
+            ),
+            "encounter_plane_cov_km2": None,
+        }
 
     # Agreement is a relative test with an absolute floor: two methods that both
     # return 1e-30 agree for every practical purpose even if they differ by 50%.
@@ -442,5 +620,6 @@ def assess_conjunction(
         "relative_speed_kms": rel_speed,
         "risk_level": risk_level(pc_quad),
         "short_encounter_valid": True,
+        "covariance_valid": True,
         "encounter_plane_cov_km2": C_2d.tolist(),
     }
