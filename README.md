@@ -1,7 +1,8 @@
+<img width="1919" height="994" alt="Screenshot 2026-07-25 195920" src="https://github.com/user-attachments/assets/57422c70-a70f-4d3c-b46e-f2cb5abe9525" />
 # ISDMAAS
 ### Intelligent Satellite Debris Management & Autonomous Avoidance System
 
-**Status:** Validated prototype (TRL 4–5) · **Owner:** Mridul Gupta (Zyton) · **Last updated:** 2026-08-31
+**Status:** Validated prototype (TRL 4–5) · **Owner:** Mridul Gupta · **Last updated:** 2026-08-31
 
 > **Open finding (2026-08-31):** the prediction-layer validation numbers do not
 > reproduce from the artifacts in this repository. Read
@@ -206,10 +207,11 @@ See `outputs/ISDMAAS_Pilot_Proposal.docx` for the concrete ask, and `docs/techni
 
 ## 9. Citation
 
-If referencing this work academically, see `outputs/ISDMAAS_IEEE_Paper.docx` for the formal citation and methodology writeup.
+If referencing this work academically, see `outputs/ISDMAAS_Paper.docx` for the formal citation and methodology writeup.
 
 ---
 
 ## 10. Contact
 
-Mridul Gupta · Zyton · [email]
+Mridul Gupta · [mridul1735@gmail.com]
+link :http://3.107.190.182:8080/dashboard.html
