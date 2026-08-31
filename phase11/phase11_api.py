@@ -674,7 +674,13 @@ def monitor(
             coarse_step_s=settings.screen_coarse_step_s,
         )
         for conjunction in result.conjunctions:
-            triggered = (
+            # Only actionable assessments can raise an alert. A CO_LOCATED
+            # pair is one physical object under two catalog entries — the ISS
+            # and its own modules share a single element set, so their
+            # separation is identically 0 km and the `miss <= alert_miss_km`
+            # rule fired on every one of them. Alerting on that teaches
+            # operators to ignore alerts.
+            triggered = conjunction.is_actionable and (
                 (conjunction.pc is not None and conjunction.pc >= alert_pc)
                 or conjunction.miss_km <= alert_miss_km
             )

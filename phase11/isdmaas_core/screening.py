@@ -39,6 +39,35 @@ TLE_PRIMARY_SIGMA_KM = (0.3, 1.0, 0.3)
 # understates Pc by orders of magnitude.
 CALIBRATED_PRIMARY_SIGMA_KM = (0.02, 0.05, 0.02)
 
+# --------------------------------------------------------------- assessment status
+#
+# Risk bands answer "how dangerous"; status answers "is this answer usable at
+# all". Keeping them separate is what stops an unusable assessment from being
+# rendered as a reassuring NOMINAL badge.
+STATUS_ASSESSED = "ASSESSED"                    # Pc computed and meaningful
+STATUS_UNDETERMINED = "ASSESSMENT_UNAVAILABLE"  # geometry outside the model
+STATUS_CO_LOCATED = "CO_LOCATED"                # same object / shared element set
+STATUS_DATA_INVALID = "DATA_INVALID"            # inputs failed validation
+
+# Two objects are treated as CO-LOCATED when they are essentially never apart.
+#
+# This is not hypothetical. The public catalog lists the ISS modules (Unity,
+# Zvezda, Destiny, Poisk, ...) as separate objects sharing ONE element set, so
+# their computed separation is identically 0.000 km with zero relative velocity
+# at every instant. Screening the ISS produced six 0 km "conjunctions" against
+# its own modules, and /monitor raised an alert for every one of them, because
+# the alert rule is `miss <= 5 km`.
+#
+# There is also no well-defined TCA for such a pair: the separation function is
+# flat, so every instant is a minimum and two different minimizers legitimately
+# return times thousands of seconds apart.
+#
+# These are reported with an explicit status rather than silently dropped. Two
+# genuinely distinct objects flying in close formation would land here too, and
+# an operator needs to see that, not have it hidden.
+CO_LOCATION_MISS_KM = 0.001          # 1 metre
+CO_LOCATION_REL_SPEED_KMS = 1e-6     # 1 mm/s
+
 
 @dataclass
 class Conjunction:
@@ -57,6 +86,16 @@ class Conjunction:
     mahalanobis: Optional[float]
     risk: str
     covariance_source: str
+    status: str = STATUS_ASSESSED
+
+    @property
+    def is_actionable(self) -> bool:
+        """Whether this belongs in an operator alert.
+
+        A co-located pair is the same physical object under two catalog
+        entries; alerting on it trains operators to ignore alerts.
+        """
+        return self.status == STATUS_ASSESSED
 
     def as_dict(self) -> Dict:
         return {
@@ -73,6 +112,8 @@ class Conjunction:
             "pc_methods_agree": self.pc_methods_agree,
             "mahalanobis": self.mahalanobis,
             "risk": self.risk,
+            "status": self.status,
+            "actionable": self.is_actionable,
             "covariance_source": self.covariance_source,
         }
 
@@ -110,6 +151,15 @@ def assess_approach(
         approach.r_secondary, approach.v_secondary, C2,
         hbr_km, tca_already_refined=True,
     )
+
+    if (approach.miss_km <= CO_LOCATION_MISS_KM
+            and approach.relative_speed_kms <= CO_LOCATION_REL_SPEED_KMS):
+        status = STATUS_CO_LOCATED
+    elif result["pc"] is None:
+        status = STATUS_UNDETERMINED
+    else:
+        status = STATUS_ASSESSED
+
     return Conjunction(
         primary_norad=primary_norad,
         primary_name=primary_name,
@@ -125,6 +175,7 @@ def assess_approach(
         mahalanobis=result["mahalanobis"],
         risk=result["risk_level"],
         covariance_source=covariance_source,
+        status=status,
     )
 
 
