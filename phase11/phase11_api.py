@@ -1178,7 +1178,17 @@ def live_catalog(
             "The object cache has not been built. Run: python debris_data.py sync",
             code="service_unavailable",
         )
-    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    # Opened read-write, then restricted with PRAGMA query_only.
+    #
+    # `file:...?mode=ro` looks safer and is not usable here: the object cache is
+    # a WAL database, and SQLite needs write access to the -wal and -shm
+    # sidecars even to READ from one. A read-only URI connection fails with
+    # "attempt to write a readonly database" the moment the WAL needs attaching,
+    # which took this endpoint out entirely. query_only gives the same guarantee
+    # - no statement on this connection can modify the database - without
+    # blocking the housekeeping a WAL read requires.
+    connection = sqlite3.connect(str(db_path), timeout=15.0)
+    connection.execute("PRAGMA query_only=ON")
     connection.row_factory = sqlite3.Row
     try:
         query = "SELECT * FROM objects WHERE 1=1"

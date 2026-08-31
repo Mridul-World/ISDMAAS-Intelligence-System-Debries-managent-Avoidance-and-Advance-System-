@@ -292,3 +292,26 @@ def test_primary_uncertainty_is_never_tighter_than_the_determination(client):
         .total_seconds()
     )
     assert age_s < 3600, "the primary state must be current, not a stale snapshot"
+
+
+def test_live_catalog_reads_a_wal_database(client):
+    """
+    Regression: the object cache is a WAL database, and SQLite needs write
+    access to the -wal/-shm sidecars even to READ one. Opening it with
+    `file:...?mode=ro` failed with "attempt to write a readonly database" and
+    took the endpoint out entirely. It is now opened read-write and restricted
+    with PRAGMA query_only, which gives the same guarantee without blocking WAL
+    housekeeping.
+    """
+    response = client.get("/live/catalog?group=active&limit=5")
+    # 503 is legitimate when the cache has not been built in this environment;
+    # what must never happen is a 500 from the read-only-open failure.
+    assert response.status_code in (200, 503), response.text
+    if response.status_code == 503:
+        assert "has not been built" in response.json()["detail"]
+    else:
+        body = response.json()
+        assert body["count"] >= 0
+        for obj in body["objects"]:
+            assert obj["tle1"].startswith("1 ")
+            assert obj["tle2"].startswith("2 ")

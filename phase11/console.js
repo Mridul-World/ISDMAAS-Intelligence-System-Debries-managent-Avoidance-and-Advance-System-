@@ -484,9 +484,26 @@ function animate() {
   renderer.render(scene, camera);
 }
 
+/**
+ * Map an inertial (TEME) position in km to scene coordinates.
+ *
+ * three.js is Y-up and the Earth mesh and graticule in this scene are built with
+ * Y as the polar axis, so the inertial Z (pole) has to become scene Y.
+ *
+ * This was previously applied ONLY to live debris. Orbit tracks from the API
+ * were pushed into the scene as raw (x, y, z), which rendered every orbit
+ * rotated 90 degrees relative to the Earth and to every live object: a polar
+ * orbit looked equatorial, and a genuine conjunction did not appear as one. Both
+ * paths now use this single mapping.
+ */
+function eciToScene(p) { return new THREE.Vector3(p.x, p.z, -p.y); }
+
+/** Same mapping for a track stored as [x, y, z] arrays. */
+function eciArrayToScene(p) { return new THREE.Vector3(p[0], p[2], -p[1]); }
+
 function trackPoint(track, phase) {
   const index = Math.floor(((phase % 1) + 1) % 1 * track.length) % track.length;
-  return new THREE.Vector3(...track[index]);
+  return eciArrayToScene(track[index]);
 }
 
 function drawOrbit(track, color, previous, opacity = 0.95) {
@@ -495,7 +512,7 @@ function drawOrbit(track, color, previous, opacity = 0.95) {
     previous.geometry.dispose();
     previous.material.dispose();
   }
-  const points = track.map((p) => new THREE.Vector3(p[0], p[1], p[2]));
+  const points = track.map(eciArrayToScene);
   if (points.length) points.push(points[0].clone());
   const geometry = new THREE.BufferGeometry().setFromPoints(points);
   const line = new THREE.Line(geometry,
@@ -547,7 +564,7 @@ function markTca(position) {
     new THREE.RingGeometry(380, 520, 32),
     new THREE.MeshBasicMaterial({
       color: 0xffc53d, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
-  tcaMarker.position.set(position[0], position[1], position[2]);
+  tcaMarker.position.copy(eciArrayToScene(position));
   tcaMarker.lookAt(0, 0, 0);
   scene.add(tcaMarker);
 }
@@ -558,7 +575,6 @@ let liveSimTime = new Date();
 let liveLastFrame = performance.now();
 let currentLiveGroup = null;
 
-function eciToScene(p) { return new THREE.Vector3(p.x, p.z, -p.y); }
 
 function propagateLive() {
   if (!liveObjects.length) return;
