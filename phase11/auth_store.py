@@ -37,7 +37,6 @@ from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
-from sgp4.api import Satrec
 
 from isdmaas_core.config import get_settings
 from isdmaas_core.errors import ApiError

@@ -518,7 +518,7 @@ def orbit_track(
         epoch = datetime.now(timezone.utc)
         offsets = np.linspace(0.0, period * period_fraction, points, endpoint=False)
         positions, _, ok = astro.propagate_series(entry.satrec, epoch, offsets)
-        track = [p.tolist() for p, good in zip(positions, ok) if good]
+        track = [p.tolist() for p, good in zip(positions, ok, strict=False) if good]
         if len(track) < 8:
             raise ApiError(
                 422,

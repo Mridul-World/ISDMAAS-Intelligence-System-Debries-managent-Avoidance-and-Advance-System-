@@ -89,7 +89,7 @@ def test_checksums_of_real_element_sets_are_self_consistent():
 
 @requires_catalog
 def test_catalog_numbers_and_epochs_are_extracted_correctly():
-    for name, line1, line2 in REAL[:200]:
+    for _name, line1, line2 in REAL[:200]:
         report = validate_tle(line1, line2)
         assert report.norad == int(line1[2:7])
         assert report.norad == int(line2[2:7])

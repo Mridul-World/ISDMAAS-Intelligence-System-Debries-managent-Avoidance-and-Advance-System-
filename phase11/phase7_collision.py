@@ -299,7 +299,7 @@ def pc_2d_quadrature(
     edges = _radial_panels(hbr, min(sx, sy))
     nodes, weights = np.polynomial.legendre.leggauss(n_r)
     radii, radial_weights = [], []
-    for low, high in zip(edges[:-1], edges[1:]):
+    for low, high in zip(edges[:-1], edges[1:], strict=False):
         half = 0.5 * (high - low)
         radii.append(half * (nodes + 1.0) + low)
         radial_weights.append(half * weights)

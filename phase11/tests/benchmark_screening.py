@@ -17,7 +17,6 @@ from __future__ import annotations
 import argparse
 import gc
 import json
-import math
 import sys
 import time
 import tracemalloc
@@ -27,7 +26,6 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(APP_DIR))
 
-import numpy as np  # noqa: E402
 from sgp4.api import Satrec  # noqa: E402
 
 from isdmaas_core import astrodynamics as astro  # noqa: E402

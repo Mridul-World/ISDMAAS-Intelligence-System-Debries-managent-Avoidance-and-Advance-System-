@@ -134,7 +134,7 @@ def build_samples():
                 times, pos = _load_truth(path)
             except Exception:
                 continue
-            for t, p_truth in zip(times, pos):
+            for t, p_truth in zip(times, pos, strict=True):
                 # newest TLE at or before t (fallback: earliest TLE)
                 prior = [x for x in tles if x[0] <= t]
                 ep, l1, l2 = (prior[-1] if prior else tles[0])

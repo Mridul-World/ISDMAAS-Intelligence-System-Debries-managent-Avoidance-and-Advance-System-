@@ -36,7 +36,6 @@ from phase7_collision import rtn_to_eci_cov, secondary_covariance_rtn
 from phase8_maneuver import (
     OPERATIONAL_MIN_LEAD_H,
     PC_SAFE,
-    PC_THRESHOLD,
     apply_along_track_dv,
     cw_impulse_response,
     fuel_kg,

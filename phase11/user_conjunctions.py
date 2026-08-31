@@ -77,7 +77,7 @@ def user_orbit(norad: str, points: int = 240):
     period_s = astro.orbital_period_s(sat)
     offsets = np.linspace(0.0, period_s, points, endpoint=False)
     positions, _, ok = astro.propagate_series(sat, now, offsets)
-    track = [p.tolist() for p, good in zip(positions, ok) if good]
+    track = [p.tolist() for p, good in zip(positions, ok, strict=True) if good]
     if len(track) < 10:
         raise ApiError(
             422,

@@ -1,0 +1,225 @@
+name: CI
+
+on:
+  push:
+    branches: [main, production-hardening]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The suite must never depend on CelesTrak being reachable. The bundled
+  # offline catalog is copied into the data directory by tests/conftest.py.
+  ISDMAAS_ENV: development
+  ISDMAAS_LOG_LEVEL: WARNING
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install ruff==0.6.9
+      - name: Ruff
+        run: ruff check . --output-format=github
+        working-directory: phase11
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No credential files may be tracked
+        run: |
+          set -e
+          MATCHES=$(git ls-files | grep -E '(^|/)dd\.env$|(^|/)[^/]*\.env$|auth_store\.json$' | grep -v '\.env\.example$' || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::A credential file is tracked. See docs/SECURITY_AUDIT.md section 1."
+            echo "$MATCHES"
+            exit 1
+          fi
+          echo "No credential files tracked."
+
+      - name: No credential literals in tracked source
+        # Verified against both directions before being committed: it stays
+        # silent on `os.environ.get("DISCOS_TOKEN", "")` and on documentation
+        # placeholders like `set SPACETRACK_PASS=your_password`, and it fires on
+        # the actual literal this repository leaked in commit e82a38e.
+        run: |
+          set -e
+          FILES=$(git ls-files '*.py' '*.md' '*.json' '*.txt' '*.html' '*.js' '*.yml' '*.yaml' '*.sh' '*.ps1'                   | grep -vE 'catalog_active\.tle|SECURITY_AUDIT|PRODUCTION_AUDIT|\.env\.example' || true)
+          [ -z "$FILES" ] && { echo "nothing to scan"; exit 0; }
+          PATTERN='(SPACETRACK_PASS|SPACETRACK_USER|CDSE_PASS|CDSE_USER|DISCOS_TOKEN)[[:space:]]*=[[:space:]]*"[^"]{8,}"'
+          PLACEHOLDER='your_|YOUR_|<[^>]*>|xxx|XXX|changeme|CHANGEME|example|EXAMPLE|redacted|REDACTED|\.\.\.'
+          HITS=$(grep -nEH "$PATTERN" $FILES 2>/dev/null | grep -vE "$PLACEHOLDER" || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::A credential-shaped literal is present in a tracked file."
+            echo "$HITS"
+            exit 1
+          fi
+          if grep -nH 'BEGIN .*PRIVATE KEY' $FILES 2>/dev/null; then
+            echo "::error::A private key is present in a tracked file."
+            exit 1
+          fi
+          echo "Secret scan: clean."
+
+  # ---------------------------------------------------------------------------
+  # SAFETY-CRITICAL GATE
+  #
+  # These suites validate the physics against independent reference
+  # implementations. A failure here is a scientific regression and must block a
+  # release rather than be triaged later. Each is a separate step so the failing
+  # discipline is named in the job summary rather than buried in a diff.
+  # ---------------------------------------------------------------------------
+  scientific:
+    name: Scientific validation (safety-critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r phase11/requirements-dev.txt
+      - name: Units, frames, epochs and time conversions
+        run: python -m pytest tests/scientific/test_units_and_frames.py -v
+        working-directory: phase11
+      - name: Element-set integrity
+        run: python -m pytest tests/scientific/test_tle_validation.py -v
+        working-directory: phase11
+      - name: TCA vs independent reference implementation
+        run: python -m pytest tests/scientific/test_tca_validation.py -v
+        working-directory: phase11
+      - name: Collision probability vs numerical integration
+        run: python -m pytest tests/scientific/test_collision_probability.py -v
+        working-directory: phase11
+      - name: Maneuver model vs numerical propagation
+        run: python -m pytest tests/scientific/test_maneuver_validation.py -v
+        working-directory: phase11
+      - name: Co-located object handling
+        run: python -m pytest tests/scientific/test_co_location.py -v
+        working-directory: phase11
+
+  security:
+    name: Security (safety-critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r phase11/requirements-dev.txt
+      - name: Authorization, IDOR and injection
+        run: python -m pytest tests/security -v
+        working-directory: phase11
+      - name: Credential handling and rate limiting
+        run: python -m pytest tests/test_security.py -v
+        working-directory: phase11
+
+  tests:
+    name: Unit and API
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r phase11/requirements-dev.txt
+      - name: Full suite
+        run: python -m pytest tests -v --durations=15
+        working-directory: phase11
+
+  e2e:
+    name: End-to-end mission workflow (safety-critical)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r phase11/requirements-dev.txt
+      - name: Detection through post-burn verification
+        run: python -m pytest tests/e2e -v
+        working-directory: phase11
+
+  ml-regression:
+    name: ML pipeline regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install numpy
+      - name: Trainer self-test
+        # Verifies the training loop, EMA warmup, the reconstruction identity and
+        # ensembling against synthetic data with a known relationship. This is the
+        # guard that catches a frame or normalization mismatch BEFORE a checkpoint
+        # can be produced, and it fails if signal recovery drops. It is what
+        # would have caught the artifact mismatch in
+        # docs/technical/09-model-artifact-audit.md.
+        run: python train_phase55_rtn_v2.py --self-test --quiet
+        working-directory: phase55
+
+  build:
+    name: Container build and production guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t isdmaas:ci phase11
+      - name: Image must refuse to start without a secret key
+        run: |
+          set -e
+          if docker run --rm -e ISDMAAS_ENV=production isdmaas:ci \
+               python -c "from isdmaas_core.config import load_settings; load_settings()" 2>/dev/null; then
+            echo "::error::Container started in production mode without a secret key."
+            exit 1
+          fi
+          echo "Production configuration guard held."
+
+  release-gate:
+    name: Release gate
+    runs-on: ubuntu-latest
+    needs: [lint, secrets, scientific, security, tests, e2e, ml-regression, build]
+    if: always()
+    steps:
+      - name: Block release on any safety-critical failure
+        run: |
+          echo "lint:          ${{ needs.lint.result }}"
+          echo "secrets:       ${{ needs.secrets.result }}"
+          echo "scientific:    ${{ needs.scientific.result }}"
+          echo "security:      ${{ needs.security.result }}"
+          echo "tests:         ${{ needs.tests.result }}"
+          echo "e2e:           ${{ needs.e2e.result }}"
+          echo "ml-regression: ${{ needs.ml-regression.result }}"
+          echo "build:         ${{ needs.build.result }}"
+          FAILED=0
+          for r in "${{ needs.scientific.result }}" "${{ needs.security.result }}" \
+                   "${{ needs.e2e.result }}" "${{ needs.tests.result }}" \
+                   "${{ needs.secrets.result }}"; do
+            if [ "$r" != "success" ]; then FAILED=1; fi
+          done
+          if [ "$FAILED" = "1" ]; then
+            echo "::error::A safety-critical suite failed. This must not be released."
+            exit 1
+          fi
+          echo "All safety-critical suites passed."

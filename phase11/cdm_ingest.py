@@ -186,7 +186,9 @@ def parse_cdm_xml(text):
     }
     for seg in root.findall(".//segment"):
         # state vector
-        def gv(tag):
+        # `seg` is bound as a default so the closure cannot silently pick up
+        # the last loop iteration if it is ever stored and called later.
+        def gv(tag, seg=seg):
             v = findtext(seg, tag)
             return float(v) if v is not None else None
         x, y, z = gv("X"), gv("Y"), gv("Z")
@@ -194,7 +196,7 @@ def parse_cdm_xml(text):
         r = np.array([x, y, z]) if None not in (x, y, z) else None
         v = np.array([vx, vy, vz]) if None not in (vx, vy, vz) else None
         # covariance (RTN position block), m^2 -> km^2
-        def gc(tag):
+        def gc(tag, seg=seg):
             val = findtext(seg, tag)
             return float(val) * 1e-6 if val is not None else None
         terms = {k: gc(k) for k in _KVN_COV_KEYS}

@@ -1,0 +1,44 @@
+[tool.ruff]
+line-length = 90
+target-version = "py310"
+extend-exclude = [
+    # One-shot patch scripts, archived and disabled. Kept for the historical
+    # record of what they changed; not maintained, not linted.
+    "fix_all.py",
+    "fix_celestrak.py",
+    "fix_covariance.py",
+    "fix_reload.py",
+    "add_login.py",
+    "add_screening.py",
+    "vendor",
+]
+
+[tool.ruff.lint]
+# Deliberately not the full default set. These are the rules that catch real
+# defects in this codebase - undefined names, unused imports, mutable default
+# arguments, bare excepts - rather than stylistic preferences that would produce
+# a large diff with no behavioural change.
+select = ["F", "E9", "B", "UP032", "C4"]
+ignore = [
+    "B008",  # FastAPI's Depends()/Query() in defaults is the framework's idiom
+    "B017",  # pytest.raises(Exception) is deliberate in a few robustness tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests set environment variables before importing the app under test, which
+# necessarily puts imports after statements.
+"tests/*" = ["E402"]
+"tests/**/*" = ["E402"]
+# The API mounts its sub-applications at the bottom of the module, after the
+# routes they depend on are defined.
+"phase11_api.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    "ignore::DeprecationWarning:starlette.*",
+    "ignore::UserWarning:starlette.*",
+]
+markers = [
+    "slow: takes more than a few seconds",
+]

@@ -12,7 +12,6 @@ import sys
 import textwrap
 from pathlib import Path
 
-import pytest
 
 APP_DIR = Path(__file__).resolve().parent.parent.parent
 LONG_KEY = "k" * 40

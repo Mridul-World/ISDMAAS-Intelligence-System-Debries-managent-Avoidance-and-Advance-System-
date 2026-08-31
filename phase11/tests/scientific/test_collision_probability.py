@@ -197,14 +197,14 @@ def test_probability_decreases_monotonically_with_miss_distance():
     C = np.diag([0.5 ** 2, 0.5 ** 2])
     values = [pc_2d_quadrature(np.array([d, 0.0]), C, 0.02)
               for d in (0.0, 0.25, 0.5, 1.0, 2.0, 4.0)]
-    assert all(a > b for a, b in zip(values, values[1:])), values
+    assert all(a > b for a, b in zip(values, values[1:], strict=False)), values
 
 
 def test_probability_increases_monotonically_with_hard_body_radius():
     C = np.diag([0.5 ** 2, 0.5 ** 2])
     values = [pc_2d_quadrature(np.array([0.5, 0.0]), C, h)
               for h in (0.001, 0.005, 0.02, 0.05, 0.1)]
-    assert all(a < b for a, b in zip(values, values[1:])), values
+    assert all(a < b for a, b in zip(values, values[1:], strict=False)), values
 
 
 def test_probability_is_bounded_in_zero_one():

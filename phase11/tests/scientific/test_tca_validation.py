@@ -416,7 +416,7 @@ def test_local_minima_bracketing_finds_every_pass():
         f"being merged or discarded"
     )
     times = sorted(a.tca_offset_s for a in approaches)
-    assert all(b - a > 60.0 for a, b in zip(times, times[1:])), (
+    assert all(b - a > 60.0 for a, b in zip(times, times[1:], strict=False)), (
         "two reported approaches are within a minute of each other; they are "
         "the same pass counted twice"
     )

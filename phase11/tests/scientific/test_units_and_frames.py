@@ -18,7 +18,7 @@ from datetime import datetime, timedelta, timezone
 import math
 import numpy as np
 import pytest
-from sgp4.api import Satrec, jday
+from sgp4.api import Satrec
 
 from isdmaas_core import astrodynamics as astro
 from phase7_collision import eci_to_rtn_cov, rtn_to_eci_cov, secondary_covariance_rtn
