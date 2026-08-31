@@ -63,7 +63,16 @@ ISP_S = 220.0             # specific impulse of a typical hydrazine thruster (s)
 G0_KM_S2 = 9.80665e-3     # standard gravity in km/s^2
 DEFAULT_LEAD_OPTIONS_H = (0.75, 1.5, 3.0, 6.0, 12.0)
 DV_MAX_MS = 1000.0        # search ceiling; beyond this the answer is "escalate"
-MIN_LEAD_TIME_H = 1.0 / 60.0   # one minute: below this no operator can act
+MIN_LEAD_TIME_H = 1.0 / 60.0   # one minute: the physics floor for the search
+
+# Below this lead time a burn is not OPERATIONALLY executable, whatever the
+# physics says. A real avoidance maneuver has to be planned, independently
+# verified, scheduled, uplinked and confirmed; thirty minutes is already tight
+# for a crewed operations desk. Options shorter than this are still computed and
+# still shown - an operator facing a late detection needs to see what the physics
+# would allow - but they are marked infeasible and are never the recommendation
+# unless nothing else exists.
+OPERATIONAL_MIN_LEAD_H = 0.5
 
 
 def lead_time_options(tca_s: float, ladder=DEFAULT_LEAD_OPTIONS_H) -> list:
@@ -332,6 +341,7 @@ def plan_maneuver(
             "new_pc": pc_new,
             "new_risk": risk_level(pc_new),
             "fuel_kg": fuel_kg(dv_ms, sat_mass_kg),
+            "operationally_feasible": float(lead_h) >= OPERATIONAL_MIN_LEAD_H,
         }
         plan["options"].append(option)
         feasible.append((dv_ms, option))
@@ -343,10 +353,24 @@ def plan_maneuver(
         )
         return plan
 
-    feasible.sort(key=lambda item: item[0])
-    best = feasible[0][1]
+    # Selection. Every option in `feasible` already reaches PC_SAFE by
+    # construction - that is the bisection target - and each is independently
+    # re-verified by the safety gate afterwards. So propellant is a legitimate
+    # discriminator BETWEEN options that all solve the problem; it is never the
+    # reason an option is considered solved.
+    #
+    # Operational feasibility outranks propellant. The cheapest burn is usually
+    # the earliest one, but a burn scheduled two minutes from now cannot be
+    # planned, verified and uplinked in time, so recommending it as "best" would
+    # be presenting an unexecutable plan as the answer.
+    executable = [item for item in feasible
+                  if item[1]["operationally_feasible"]]
+    pool = executable or feasible
+    pool.sort(key=lambda item: item[0])
+    best = pool[0][1]
+
     sign = 1.0 if best["direction"] == "prograde" else -1.0
-    plan["recommendation"] = {
+    recommendation = {
         # RTN vector: along-track component only (index 1 = S axis).
         "dv_rtn_ms": [0.0, sign * best["dv_ms"], 0.0],
         "dv_magnitude_ms": best["dv_ms"],
@@ -356,5 +380,21 @@ def plan_maneuver(
         "predicted_new_miss_km": best["new_miss_km"],
         "predicted_new_pc": best["new_pc"],
         "predicted_new_risk": best["new_risk"],
+        "operationally_feasible": best["operationally_feasible"],
+        # How far below the safety target this option lands. An operator
+        # choosing between two similar burns needs the robustness margin, not
+        # just the propellant number.
+        "pc_safety_margin": (
+            float(PC_SAFE / best["new_pc"]) if best["new_pc"] > 0 else float("inf")
+        ),
     }
+    if not best["operationally_feasible"]:
+        recommendation["warning"] = (
+            f"No operationally feasible option exists: the earliest burn that "
+            f"solves this conjunction is T-{best['burn_lead_time_h']:.3f} h, "
+            f"inside the {OPERATIONAL_MIN_LEAD_H:.2f} h minimum for planning, "
+            f"verification and uplink. Escalate rather than treating this as a "
+            f"routine recommendation."
+        )
+    plan["recommendation"] = recommendation
     return plan
