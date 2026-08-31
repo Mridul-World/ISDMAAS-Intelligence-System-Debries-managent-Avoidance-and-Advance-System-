@@ -12,10 +12,14 @@ Each doc is self-contained. Cross-reference by filename, don't duplicate content
 | 06 | [API & Software](06-api-software.md) | Endpoint reference, library rationale | Draft — from §6 + phase11_api.py routes | 2026-06 |
 | 07 | [Validation Results](07-validation-results.md) | All numbers, dated, append-only | Draft — from §3 | 2026-06 |
 | 08 | [Math Appendix](08-math-appendix.md) | Every equation, single source of truth | Draft — from §9 | 2026-06 |
+| 09 | [Model Artifact Audit](09-model-artifact-audit.md) | Reproducibility of the prediction-layer numbers | **Open finding — read before citing any prediction result** | 2026-08-31 |
 
 ## Update discipline
 - Change model/covariance/data → update the matching doc **in the same commit**.
 - New validation run → append a new dated section to `07`, never overwrite prior results.
+- **Record the SHA-256 of the checkpoint every validation number describes.** A
+  report and a model file drifting apart unnoticed is exactly the failure
+  documented in `09`, and the hash is what makes it detectable.
 - New equation used anywhere → goes in `08` first; other docs reference it (`see Eq. A.3`), don't restate it.
 
 ## Source

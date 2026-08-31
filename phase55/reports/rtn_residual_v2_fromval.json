@@ -1,0 +1,109 @@
+{
+  "sgp4_baseline_test": {
+    "rmse_km": 2.259558916091919,
+    "median_km": 0.6606481671333313,
+    "p90_km": 3.3614132404327393,
+    "p99_km": 9.665452003479004
+  },
+  "variants": {
+    "single model (seed 42)": {
+      "rmse_km": 2.253317356109619,
+      "median_km": 0.6525070667266846,
+      "p90_km": 3.263347625732422,
+      "p99_km": 9.56577205657959,
+      "rmse_improvement_pct": 0.27622913205976873,
+      "median_improvement_pct": 1.2322898649628322
+    },
+    "single model (seed 43)": {
+      "rmse_km": 2.211155891418457,
+      "median_km": 0.6688817739486694,
+      "p90_km": 3.0616562366485596,
+      "p99_km": 9.133877754211426,
+      "rmse_improvement_pct": 2.142144837594173,
+      "median_improvement_pct": -1.2462922361633488
+    },
+    "single model (seed 44)": {
+      "rmse_km": 1.9949500560760498,
+      "median_km": 0.7762358784675598,
+      "p90_km": 2.2240405082702637,
+      "p99_km": 8.372204780578613,
+      "rmse_improvement_pct": 11.710642202396325,
+      "median_improvement_pct": -17.49610716938548
+    },
+    "ensemble of 3": {
+      "rmse_km": 2.113929271697998,
+      "median_km": 0.5858455896377563,
+      "p90_km": 2.757427930831909,
+      "p99_km": 9.001834869384766,
+      "rmse_improvement_pct": 6.445047454031361,
+      "median_improvement_pct": 11.322604256991509
+    },
+    "ensemble + affine calibration": {
+      "rmse_km": 2.026047945022583,
+      "median_km": 0.8977510333061218,
+      "p90_km": 2.3371145725250244,
+      "p99_km": 8.118571281433105,
+      "rmse_improvement_pct": 10.334360808489606,
+      "median_improvement_pct": -35.88943070887816
+    }
+  },
+  "best_variant": "single model (seed 44)",
+  "per_axis_correlation_dev": {
+    "R": 0.08179688588212705,
+    "T": 0.2264220425307278,
+    "N": 0.03268151428866139
+  },
+  "affine_scale_rtn": [
+    0.4771564304828644,
+    2.024280309677124,
+    0.18280181288719177
+  ],
+  "affine_offset_rtn": [
+    0.01756197389339481,
+    0.24798869723099415,
+    -0.006826579467901994
+  ],
+  "dev_metrics_per_seed": [
+    {
+      "rmse_km": 2.422698736190796,
+      "median_km": 0.7690906524658203,
+      "p90_km": 3.430311918258667,
+      "p99_km": 9.891990661621094,
+      "epoch": 2
+    },
+    {
+      "rmse_km": 2.419071674346924,
+      "median_km": 0.7379900217056274,
+      "p90_km": 3.4566843509674072,
+      "p99_km": 9.811419486999512,
+      "epoch": 1
+    },
+    {
+      "rmse_km": 2.391881227493286,
+      "median_km": 0.5270015001296997,
+      "p90_km": 3.5888307094573975,
+      "p99_km": 9.818964004516602,
+      "epoch": 21
+    }
+  ],
+  "config": {
+    "d_model": 96,
+    "nhead": 6,
+    "num_layers": 3,
+    "dim_ff": 192,
+    "dropout": 0.1,
+    "epochs": 60,
+    "batch": 256,
+    "lr": 0.0006,
+    "weight_decay": 0.0001,
+    "warmup_frac": 0.05,
+    "patience": 12,
+    "ema_decay": 0.999,
+    "grad_clip": 1.0,
+    "seeds": 3,
+    "dev_frac": 0.5
+  },
+  "label": "fromval",
+  "train_seconds": 1909.5,
+  "note": "Every figure in `variants` is measured on a test slice that was never used for checkpoint selection, early stopping, normalization statistics or calibration. It is therefore directly comparable to the SGP4 baseline in `sgp4_baseline_test` and is not a selection statistic."
+}

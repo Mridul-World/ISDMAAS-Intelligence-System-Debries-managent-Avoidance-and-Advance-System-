@@ -1,5 +1,16 @@
-fastapi
-uvicorn[standard]
-numpy
-requests
-sgp4
+# ISDMAAS service runtime.
+#
+# Pinned to compatible ranges rather than left open: an unpinned `fastapi` will
+# one day install a major version whose validation semantics differ, and the
+# first sign will be a screening endpoint silently accepting a malformed
+# request. Upper bounds are the next major, so patch and minor updates flow.
+
+fastapi>=0.110,<1.0
+uvicorn[standard]>=0.27,<1.0
+pydantic>=2.6,<3.0
+numpy>=1.26,<3.0
+requests>=2.31,<3.0
+sgp4>=2.23,<3.0
+
+# --- development / test only -------------------------------------------------
+# pip install -r requirements-dev.txt

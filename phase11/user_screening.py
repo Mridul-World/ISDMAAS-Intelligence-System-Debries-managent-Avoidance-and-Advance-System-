@@ -1,206 +1,163 @@
 """
 user_screening.py — full-catalog conjunction screening for operator satellites.
-================================================================================
-This is ISDMAAS's own SOCRATES-equivalent for a registered satellite:
 
-  GET /user/screen/{norad}?hours=24&max_results=10
+ISDMAAS's own SOCRATES-equivalent for a registered asset:
 
-  1. CATALOG: fetches/caches the public CelesTrak GP catalog (active satellites
-     + major debris groups) to catalog_cache.json (refresh with &refresh=true).
-  2. COARSE SCREEN (vectorized): propagates the WHOLE catalog with SatrecArray
-     (C++-speed, chunked) on a 60 s grid across the screening window, after an
-     altitude-band prefilter, and finds each object's minimum distance to the
-     operator's satellite.
-  3. FINE TCA: candidates under the coarse gate get the full numerical TCA
-     refinement (down to 0.02 s) + encounter-plane Pc with TLE-scale covariance.
-  4. LOG: every screening run and its conjunctions are stored in the ops
-     database (dataset accumulation for the pilot record).
+  GET /user/screen/{norad}?hours=24&gate_km=25
 
-HONEST NOTES:
-  - Pc uses the TLE-scale covariance model (documented); with real CDMs the
-    /cdm/assess path uses real covariance instead.
+  1. CATALOG   the shared, cached public catalog service.
+  2. FILTER    apogee/perigee rejection before any propagation.
+  3. SCREEN    vectorized SGP4 across the window (SatrecArray, C speed).
+  4. REFINE    Brent refinement of every hit to a millisecond-accurate TCA, then
+               encounter-plane Pc with the TLE-scale covariance model.
+  5. LOG       the run and its conjunctions go to the operational database.
+
+Honest notes
+  - Pc uses the documented TLE-scale covariance model. With real CDMs the
+    /cdm/assess path uses the operator's own covariance instead.
   - Screening results are OPERATIONAL RECORDS, not training labels. Training
-    remains truth-data-driven via training_pipeline.py.
-  - A full-catalog screen takes ~10–60 s depending on machine and catalog size;
-    that time is local computation, not cloud latency.
+    stays truth-data-driven via training_pipeline.py.
+
+Screening is now authenticated. It is the most expensive endpoint in the service
+— a full-catalog screen against 16 000 objects — and it was previously reachable
+without a token, which let any caller consume the whole machine. It also reads
+an operator's registered assets, which is not public information.
 """
-import os, json, time
-import numpy as np
-import requests
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException
-from sgp4.api import Satrec, SatrecArray, jday
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, Query
+from sgp4.api import Satrec
+
+from isdmaas_core import screening as screening_service
+from isdmaas_core.catalog import get_catalog_service
+from isdmaas_core.config import get_settings
+from isdmaas_core.errors import ApiError
+from isdmaas_core.logging_config import get_logger
 
 import ops_db
-from auth_store import get_satellite
-from user_conjunctions import _find_tca, _pc, _satrec, _state
+from auth_store import get_satellite, require_user
 
-router = APIRouter()
-
-_CACHE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "catalog_cache.json")
-_GROUPS = ["active", "cosmos-2251-debris", "iridium-33-debris",
-           "fengyun-1c-debris", "cosmos-1408-debris"]
-_GP_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP={g}&FORMAT=tle"
+log = get_logger("isdmaas.user_screen")
+router = APIRouter(tags=["operator"])
 
 
-# ----------------------------------------------------------------------------
-# catalog cache
-# ----------------------------------------------------------------------------
-def _fetch_catalog():
-    objs = {}
-    for g in _GROUPS:
-        try:
-            r = requests.get(_GP_URL.format(g=g),
-                             headers={"User-Agent": "ISDMAAS/1.0"}, timeout=60)
-            lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
-            for i in range(0, len(lines) - 2, 3):
-                name, l1, l2 = lines[i], lines[i + 1], lines[i + 2]
-                if not (l1.startswith("1 ") and l2.startswith("2 ")):
-                    continue
-                norad = l1[2:7].strip()
-                objs[norad] = {"name": name, "tle1": l1, "tle2": l2, "group": g}
-        except Exception as e:
-            print(f"[screening] group {g} fetch failed: {e}")
-    if objs:
-        json.dump({"fetched_utc": datetime.now(timezone.utc).isoformat(),
-                   "objects": objs}, open(_CACHE, "w"))
-    return objs
-
-def _catalog(refresh=False):
-    if not refresh and os.path.exists(_CACHE):
-        try:
-            d = json.load(open(_CACHE))
-            if d.get("objects"):
-                return d["objects"], d.get("fetched_utc", "")
-        except Exception:
-            pass
-    objs = _fetch_catalog()
-    if not objs:
-        raise HTTPException(503, "Catalog unavailable — no cache and CelesTrak "
-                                 "fetch failed. Retry with &refresh=true when online.")
-    return objs, datetime.now(timezone.utc).isoformat()
-
-
-# ----------------------------------------------------------------------------
-# coarse vectorized screen
-# ----------------------------------------------------------------------------
-def _alt_band(sat, when):
-    """(perigee-ish, apogee-ish) altitude of the user satellite over one rev, km."""
-    alts = []
-    for m in range(0, 100, 5):
-        r, _ = _state(sat, when + timedelta(minutes=m))
-        if r is not None:
-            alts.append(np.linalg.norm(r) - 6371.0)
-    return (min(alts), max(alts)) if alts else (0, 2000)
-
-def _coarse_screen(user_sat, cat_objs, start, hours, gate_km=150.0, band_pad_km=120.0):
-    """Vectorized min-distance of every catalog object to the user track.
-    Returns [(norad, min_km)] for objects under the gate."""
-    n_steps = int(hours * 60)  # 60 s grid
-    times = [start + timedelta(seconds=60 * i) for i in range(n_steps)]
-    jds, frs = [], []
-    for t in times:
-        jd, fr = jday(t.year, t.month, t.day, t.hour, t.minute,
-                      t.second + t.microsecond * 1e-6)
-        jds.append(jd); frs.append(fr)
-    jds = np.array(jds); frs = np.array(frs)
-
-    # user track
-    ua = SatrecArray([user_sat])
-    e, ur, _ = ua.sgp4(jds, frs)
-    ur = ur[0]                                    # (n_steps, 3)
-    ok_u = (e[0] == 0)
-    if ok_u.sum() < 10:
-        raise HTTPException(422, "operator TLE fails to propagate over the window")
-
-    # altitude prefilter from the object's mean motion (cheap, no propagation):
-    lo, hi = _alt_band(user_sat, start)
-    lo -= band_pad_km; hi += band_pad_km
-    cands, recs = [], []
-    for norad, o in cat_objs.items():
-        try:
-            s = Satrec.twoline2rv(o["tle1"], o["tle2"])
-        except Exception:
-            continue
-        # semi-major axis from mean motion (rad/min): a = (mu / n^2)^(1/3)
-        n_rad_s = s.no_kozai / 60.0
-        a_km = (398600.4418 / (n_rad_s ** 2)) ** (1.0 / 3.0)
-        alt = a_km - 6371.0
-        ecc = s.ecco
-        apo, per = alt + ecc * a_km, alt - ecc * a_km
-        if apo < lo or per > hi:
-            continue
-        cands.append(norad); recs.append(s)
-
-    hits = []
-    CH = 1000
-    for i0 in range(0, len(recs), CH):
-        chunk = SatrecArray(recs[i0:i0 + CH])
-        e, rr, _ = chunk.sgp4(jds, frs)           # (chunk, n_steps, 3)
-        d = np.linalg.norm(rr - ur[None, :, :], axis=2)
-        d[e != 0] = 1e9
-        d[:, ~ok_u] = 1e9
-        mins = d.min(axis=1)
-        for j, m in enumerate(mins):
-            if m < gate_km:
-                hits.append((cands[i0 + j], float(m)))
-    hits.sort(key=lambda x: x[1])
-    return hits, len(cands)
-
-
-# ----------------------------------------------------------------------------
-# endpoint
-# ----------------------------------------------------------------------------
 @router.get("/user/screen/{norad}")
-def screen(norad: str, hours: float = 24.0, max_results: int = 10,
-           refresh: bool = False):
-    t_start = time.time()
-    user_sat, meta = _satrec(norad)
-    cat, fetched = _catalog(refresh=refresh)
-    cat.pop(str(norad), None)  # don't screen against itself
-    start = datetime.now(timezone.utc)
-
-    hits, n_screened = _coarse_screen(user_sat, cat, start, hours)
-
-    results = []
-    for cn, coarse_km in hits[:max(20, max_results * 2)]:
-        try:
-            other = Satrec.twoline2rv(cat[cn]["tle1"], cat[cn]["tle2"])
-            tca, miss, relv, ra, va, rb, vb = _find_tca(user_sat, other, start, hours)
-            dt_s = (tca - start).total_seconds()
-            pc = _pc(miss, ra, va, rb, vb, max(dt_s, 600))
-            risk = ("CRITICAL" if pc > 1e-4 else "HIGH" if pc > 1e-5 else
-                    "ELEVATED" if pc > 1e-7 else "NOMINAL")
-            results.append({
-                "secondary_norad": cn, "secondary_name": cat[cn]["name"],
-                "group": cat[cn]["group"],
-                "tca_utc": tca.isoformat(), "tca_in_hours": round(dt_s / 3600.0, 2),
-                "miss_km": round(miss, 3), "rel_speed_kms": round(relv, 3),
-                "pc": pc, "risk": risk,
-            })
-        except Exception:
-            continue
-    results.sort(key=lambda r: r["miss_km"])
-    results = results[:max_results]
-
-    # log the run + conjunctions to the ops dataset
+def screen(
+    norad: str,
+    hours: float = Query(default=24.0, gt=0.0, le=168.0),
+    gate_km: float = Query(default=25.0, gt=0.0, le=500.0),
+    max_results: int = Query(default=10, ge=1, le=100),
+    refresh: bool = Query(default=False),
+    username: str = Depends(require_user),
+):
+    settings = get_settings()
+    record = get_satellite(norad)
+    if not record:
+        raise ApiError(
+            404, f"NORAD {norad} is not registered by any operator.", "not_found"
+        )
+    if record["owner"] != username:
+        raise ApiError(
+            403,
+            f"NORAD {norad} belongs to another operator. You can screen only "
+            "your own assets.",
+            code="forbidden",
+        )
     try:
-        ops_db.log_screening(norad, meta["name"], meta["owner"],
-                             n_screened, len(results), results)
-    except Exception as e:
-        print(f"[screening] log failed: {e}")
+        user_sat = Satrec.twoline2rv(record["tle1"], record["tle2"])
+    except Exception as exc:
+        raise ApiError(
+            422, f"The stored element set for {norad} failed to parse: {exc}",
+            code="unprocessable",
+        ) from exc
+
+    hours = min(hours, settings.screen_max_hours)
+    service = get_catalog_service(
+        settings.catalog_tle_cache,
+        settings.catalog_ttl_s,
+        fallback_path=settings.catalog_tle_fallback,
+    )
+    snapshot = service.refresh(force=True) if refresh else service.snapshot()
+    if snapshot is None or not snapshot.entries:
+        raise ApiError(
+            503,
+            "The object catalog is unavailable: no local cache and the upstream "
+            "fetch failed. Retry once network access is restored.",
+            code="service_unavailable",
+        )
+
+    numeric_norad = int(norad) if str(norad).isdigit() else None
+    result = screening_service.screen_primary(
+        primary_sat=user_sat,
+        primary_name=record["name"],
+        catalog=snapshot.as_tuples(),
+        epoch=datetime.now(timezone.utc),
+        window_s=hours * 3600.0,
+        gate_km=gate_km,
+        hbr_km=settings.hbr_km,
+        primary_norad=numeric_norad,
+        coarse_step_s=settings.screen_coarse_step_s,
+    )
+    conjunctions = [
+        {
+            "secondary_norad": c.secondary_norad,
+            "secondary_name": c.secondary_name,
+            "tca_utc": c.tca_utc,
+            "tca_in_hours": round(c.tca_hours, 3),
+            "miss_km": round(c.miss_km, 4),
+            "rel_speed_kms": round(c.relative_speed_kms, 4),
+            "pc": c.pc,
+            "pc_methods_agree": c.pc_methods_agree,
+            "risk": c.risk,
+        }
+        for c in result.conjunctions[:max_results]
+    ]
+
+    # Operational record. A logging failure must never fail the screen.
+    try:
+        ops_db.log_screening(
+            norad, record["name"], record["owner"],
+            result.objects_considered, len(conjunctions), conjunctions,
+        )
+    except Exception:
+        log.warning("screening run could not be logged", exc_info=True)
 
     return {
-        "primary": {"norad": norad, "name": meta["name"], "owner": meta["owner"]},
+        "primary": {"norad": norad, "name": record["name"], "owner": record["owner"]},
         "window_hours": hours,
-        "catalog_fetched_utc": fetched,
-        "objects_screened": n_screened,
-        "scan_seconds": round(time.time() - t_start, 1),
-        "conjunctions": results,
-        "note": "ISDMAAS's own full-catalog screen for this asset (SOCRATES-style). "
-                "Pc uses the documented TLE-scale covariance model; real CDM "
-                "covariance is used when supplied via /cdm/assess.",
+        "gate_km": gate_km,
+        "catalog_fetched_utc": snapshot.fetched_utc.isoformat(),
+        "catalog_age_hours": round(snapshot.age_s / 3600, 2),
+        "objects_screened": result.objects_considered,
+        "objects_after_geometric_filter": result.objects_after_geometric_filter,
+        "coarse_candidates": result.coarse_candidates,
+        "scan_seconds": result.scan_seconds,
+        "conjunctions": conjunctions,
+        "note": (
+            "ISDMAAS's own full-catalog screen for this asset. Pc uses the "
+            "documented TLE-scale covariance model; real CDM covariance is used "
+            "when supplied via /cdm/assess."
+        ),
     }
+
+
+@router.get("/user/screen-history/{norad}")
+def screen_history(
+    norad: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    username: str = Depends(require_user),
+):
+    """Past screening runs for one of the caller's own assets."""
+    record = get_satellite(norad)
+    if not record:
+        raise ApiError(
+            404, f"NORAD {norad} is not registered by any operator.", "not_found"
+        )
+    if record["owner"] != username:
+        raise ApiError(403, "You can only read history for your own assets.", "forbidden")
+    return {"norad": norad, "runs": ops_db.screening_history(norad, limit)}
+
 
 def install_screening(app):
     app.include_router(router)

@@ -45,7 +45,19 @@ import requests
 from sgp4.api import Satrec, jday
 from sgp4 import omm
 
-DB_PATH = os.environ.get("ISDMAAS_DB", "data/isdmaas_cache.db")
+def _default_db_path():
+    """Anchor the cache to the configured data directory, not the shell's cwd."""
+    try:
+        from isdmaas_core.config import get_settings
+
+        return str(get_settings().object_cache_db)
+    except Exception:
+        return os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "data", "isdmaas_cache.db"
+        )
+
+
+DB_PATH = os.environ.get("ISDMAAS_DB") or _default_db_path()
 UA = {"User-Agent": "ISDMAAS/1.0 (research; orbital-safety)"}
 CELESTRAK_GP = "https://celestrak.org/NORAD/elements/gp.php"
 CELESTRAK_SATCAT = "https://celestrak.org/satcat/records.php"

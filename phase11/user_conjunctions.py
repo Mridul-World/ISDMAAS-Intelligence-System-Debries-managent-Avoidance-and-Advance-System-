@@ -1,202 +1,259 @@
 """
 user_conjunctions.py — conjunction pipeline for OPERATOR-REGISTERED satellites.
-================================================================================
-User-added TLE satellites have no Phase-6 calibrated state, so they can't use
-the Sentinel maneuver pipeline. This module gives them a real, self-contained
-pipeline instead:
 
-  GET  /user/orbit/{norad}          orbit track from the registered TLE (SGP4)
-  POST /user/assess                 REAL TCA search + miss + Pc between two
-                                    registered satellites (TLE-scale covariance)
-  POST /user/plan                   minimum-dv recommendation — OWNER ONLY (403
-                                    for anyone else: the meeting's security rule)
+Operator-added satellites have no precise-orbit solution, so they cannot use the
+calibrated pipeline. This module gives them a real, self-contained one:
 
-Physics is real: SGP4 propagation, numerical TCA search, encounter-plane Pc via
-phase7_collision's quadrature with the TLE-calibrated covariance. The dv
-recommendation uses the standard along-track drift relation (ds ≈ 3·dv·t).
+  GET  /user/orbit/{norad}     orbit track from the registered element set
+  POST /user/assess            refined TCA, miss and Pc between two registered
+                               satellites, with TLE-scale covariance
+  POST /user/plan              minimum-dv recommendation — OWNER ONLY
 
-Wiring (1 line, after install_auth):
-    from user_conjunctions import install_user_pipeline
-    install_user_pipeline(app)
+What changed
+------------
+* The TCA search was a Python loop stepping 30 s at a time across the window,
+  then 1 s, then 0.02 s — around 6 000 SGP4 calls for a single pair, and the
+  screening endpoint ran it twenty times per request. It now uses the vectorized
+  coarse grid plus Brent refinement, which is both faster and exact.
+
+* The maneuver recommendation used a hand-rolled dv formula, an exponential
+  guess at the post-burn Pc with a hard-coded 0.75 km sigma, and computed the
+  propellant mass twice with the first result discarded. It now calls the same
+  planner and the same safety checks as the calibrated pipeline, so an operator
+  asset and a Sentinel get the same physics and the same audit trail.
 """
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Optional, Tuple
+
 import numpy as np
-from datetime import datetime, timezone, timedelta
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
-from sgp4.api import Satrec, jday
+from fastapi import APIRouter, Header
+from pydantic import BaseModel, Field
+from sgp4.api import Satrec
 
-from auth_store import get_satellite, require_owner, user_from_token
+from isdmaas_core import astrodynamics as astro
+from isdmaas_core import screening as screening_service
+from isdmaas_core.config import get_settings
+from isdmaas_core.errors import ApiError
+from isdmaas_core.logging_config import get_logger
 
-router = APIRouter()
+from auth_store import get_satellite, require_owner
+from phase8_maneuver import PC_THRESHOLD, plan_maneuver
+from phase10_safety import orbital_elements, validate_maneuver
+from phase7_collision import rtn_to_eci_cov, secondary_covariance_rtn
 
-# ----------------------------------------------------------------------------
-# propagation helpers
-# ----------------------------------------------------------------------------
-def _satrec(norad):
-    s = get_satellite(norad)
-    if not s:
-        raise HTTPException(404, f"NORAD {norad} not registered by any operator")
+log = get_logger("isdmaas.user")
+router = APIRouter(tags=["operator"])
+
+
+# ----------------------------------------------------------------- helpers
+def _satrec(norad: str) -> Tuple[Satrec, dict]:
+    record = get_satellite(norad)
+    if not record:
+        raise ApiError(
+            404, f"NORAD {norad} is not registered by any operator.", "not_found"
+        )
     try:
-        return Satrec.twoline2rv(s["tle1"], s["tle2"]), s
-    except Exception as e:
-        raise HTTPException(422, f"stored TLE for {norad} failed to parse: {e}")
+        return Satrec.twoline2rv(record["tle1"], record["tle2"]), record
+    except Exception as exc:
+        raise ApiError(
+            422, f"The stored element set for {norad} failed to parse: {exc}",
+            code="unprocessable",
+        ) from exc
 
-def _state(sat, when):
-    jd, fr = jday(when.year, when.month, when.day, when.hour, when.minute,
-                  when.second + when.microsecond * 1e-6)
-    e, r, v = sat.sgp4(jd, fr)
-    if e != 0:
-        return None, None
-    return np.array(r), np.array(v)
 
-# ----------------------------------------------------------------------------
-# endpoints
-# ----------------------------------------------------------------------------
+def _state(sat: Satrec, when: datetime):
+    """Kept for callers that import it; delegates to the shared propagator."""
+    return astro.propagate(sat, when)
+
+
+# --------------------------------------------------------------- endpoints
 @router.get("/user/orbit/{norad}")
 def user_orbit(norad: str, points: int = 240):
+    points = max(8, min(int(points), 2000))
     sat, meta = _satrec(norad)
     now = datetime.now(timezone.utc)
-    # one orbital period from mean motion (rev/day -> minutes)
-    period_min = 1440.0 / (sat.no_kozai * 1440.0 / (2 * np.pi)) if sat.no_kozai else 95.0
-    track = []
-    for i in range(points):
-        t = now + timedelta(minutes=period_min * i / points)
-        r, _ = _state(sat, t)
-        if r is not None:
-            track.append([float(r[0]), float(r[1]), float(r[2])])
+    period_s = astro.orbital_period_s(sat)
+    offsets = np.linspace(0.0, period_s, points, endpoint=False)
+    positions, _, ok = astro.propagate_series(sat, now, offsets)
+    track = [p.tolist() for p, good in zip(positions, ok) if good]
     if len(track) < 10:
-        raise HTTPException(422, "TLE would not propagate")
-    return {"norad": norad, "name": meta["name"], "owner": meta["owner"],
-            "track_km": track}
+        raise ApiError(
+            422,
+            "The registered element set does not propagate. Check that it is "
+            "current and correctly transcribed.",
+            code="unprocessable",
+        )
+    return {
+        "norad": norad,
+        "name": meta["name"],
+        "owner": meta["owner"],
+        "track_km": track,
+        "period_s": period_s,
+    }
 
-class AssessReq(BaseModel):
-    primary_norad: str
-    secondary_norad: str
-    window_hours: float = 24.0
 
-def _find_tca(sa, sb, start, hours):
-    """Coarse->fine numerical TCA search. Returns (tca_dt, miss_km, relv_kms)."""
-    best_t, best_d = None, 1e18
-    # coarse: 30 s steps
-    steps = int(hours * 120)
-    for i in range(steps):
-        t = start + timedelta(seconds=30 * i)
-        ra, _ = _state(sa, t); rb, _ = _state(sb, t)
-        if ra is None or rb is None: continue
-        d = float(np.linalg.norm(ra - rb))
-        if d < best_d: best_d, best_t = d, t
-    if best_t is None:
-        raise HTTPException(422, "propagation failed across the window")
-    # fine: 1 s steps around the coarse minimum
-    for i in range(-30, 31):
-        t = best_t + timedelta(seconds=i)
-        ra, _ = _state(sa, t); rb, _ = _state(sb, t)
-        if ra is None or rb is None: continue
-        d = float(np.linalg.norm(ra - rb))
-        if d < best_d: best_d, best_t = d, t
-    # ultra-fine: 0.02 s steps (needed for high closing speeds — at 15 km/s a
-    # 1 s step is a 15 km position step, far coarser than the true minimum)
-    for i in range(-50, 51):
-        t = best_t + timedelta(seconds=0.02 * i)
-        ra, _ = _state(sa, t); rb, _ = _state(sb, t)
-        if ra is None or rb is None: continue
-        d = float(np.linalg.norm(ra - rb))
-        if d < best_d: best_d, best_t = d, t
-    ra, va = _state(sa, best_t); rb, vb = _state(sb, best_t)
-    relv = float(np.linalg.norm(va - vb))
-    return best_t, best_d, relv, ra, va, rb, vb
+class AssessRequest(BaseModel):
+    primary_norad: str = Field(min_length=1, max_length=12)
+    secondary_norad: str = Field(min_length=1, max_length=12)
+    window_hours: float = Field(default=24.0, gt=0.0, le=168.0)
 
-def _pc(miss_km, ra, va, rb, vb, prop_time_s):
-    """Encounter-plane Pc with TLE-scale covariance. Uses phase7_collision when
-    importable; otherwise a faithful local 2D quadrature."""
-    try:
-        from phase7_collision import secondary_covariance_rtn, rtn_to_eci_cov, pc_2d_quadrature
-        C1 = rtn_to_eci_cov(secondary_covariance_rtn(prop_time_s), ra, va)
-        C2 = rtn_to_eci_cov(secondary_covariance_rtn(prop_time_s), rb, vb)
-        Cc = C1 + C2
-        # encounter plane basis: perpendicular to relative velocity
-        dv = (va - vb); dv /= np.linalg.norm(dv)
-        dr = (ra - rb)
-        e1 = dr - np.dot(dr, dv) * dv
-        n1 = np.linalg.norm(e1)
-        e1 = e1 / n1 if n1 > 1e-9 else np.array([1.0, 0, 0])
-        e2 = np.cross(dv, e1)
-        B = np.vstack([e1, e2])
-        C2d = B @ Cc @ B.T
-        miss2d = np.array([np.dot(dr, e1), np.dot(dr, e2)])
-        return float(pc_2d_quadrature(miss2d, C2d, 0.020))
-    except Exception:
-        # local fallback: isotropic TLE-scale sigma in-plane
-        days = prop_time_s / 86400.0
-        sr = 0.3 + 0.3 * days
-        from math import exp
-        return float((0.020 ** 2 / (2 * sr * sr)) * exp(-(miss_km ** 2) / (2 * sr * sr)))
+
+def _assess(primary_norad: str, secondary_norad: str, window_hours: float) -> dict:
+    settings = get_settings()
+    sat_a, meta_a = _satrec(primary_norad)
+    sat_b, meta_b = _satrec(secondary_norad)
+    if primary_norad == secondary_norad:
+        raise ApiError(
+            400, "Primary and secondary must be different satellites.", "bad_request"
+        )
+    start = datetime.now(timezone.utc)
+    conjunction = screening_service.assess_pair(
+        primary_sat=sat_a,
+        primary_name=meta_a["name"],
+        secondary_sat=sat_b,
+        secondary_name=meta_b["name"],
+        secondary_norad=int(secondary_norad) if secondary_norad.isdigit() else 0,
+        epoch=start,
+        window_s=window_hours * 3600.0,
+        hbr_km=settings.hbr_km,
+        coarse_step_s=settings.screen_coarse_step_s,
+    )
+    if conjunction is None:
+        raise ApiError(
+            422, "Neither element set propagates across the window.", "unprocessable"
+        )
+    return {
+        "primary": {
+            "norad": primary_norad, "name": meta_a["name"], "owner": meta_a["owner"]
+        },
+        "secondary": {
+            "norad": secondary_norad, "name": meta_b["name"], "owner": meta_b["owner"]
+        },
+        "tca_utc": conjunction.tca_utc,
+        "tca_in_hours": round(conjunction.tca_hours, 3),
+        "miss_km": round(conjunction.miss_km, 4),
+        "rel_speed_kms": round(conjunction.relative_speed_kms, 4),
+        "pc": conjunction.pc,
+        "pc_chan_crosscheck": conjunction.pc_chan,
+        "pc_methods_agree": conjunction.pc_methods_agree,
+        "mahalanobis": conjunction.mahalanobis,
+        "risk_level": conjunction.risk,
+        "covariance": "TLE-scale model (both objects)",
+        "note": (
+            "Real SGP4 propagation with a Brent-refined time of closest approach "
+            "on the registered element sets."
+        ),
+    }
+
 
 @router.post("/user/assess")
-def user_assess(req: AssessReq):
-    sa, ma = _satrec(req.primary_norad)
-    sb, mb = _satrec(req.secondary_norad)
-    start = datetime.now(timezone.utc)
-    tca, miss, relv, ra, va, rb, vb = _find_tca(sa, sb, start, req.window_hours)
-    dt_s = (tca - start).total_seconds()
-    pc = _pc(miss, ra, va, rb, vb, max(dt_s, 600))
-    risk = "CRITICAL" if pc > 1e-4 else "HIGH" if pc > 1e-5 else \
-           "ELEVATED" if pc > 1e-7 else "NOMINAL"
-    return {
-        "primary": {"norad": req.primary_norad, "name": ma["name"], "owner": ma["owner"]},
-        "secondary": {"norad": req.secondary_norad, "name": mb["name"], "owner": mb["owner"]},
-        "tca_utc": tca.isoformat(), "tca_in_hours": round(dt_s / 3600.0, 2),
-        "miss_km": round(miss, 3), "rel_speed_kms": round(relv, 3),
-        "pc": pc, "risk_level": risk,
-        "covariance": "TLE-scale model (both objects)",
-        "note": "Real SGP4 propagation + numerical TCA search on the registered TLEs.",
-    }
+def user_assess(request: AssessRequest):
+    return _assess(
+        request.primary_norad, request.secondary_norad, request.window_hours
+    )
 
-class PlanReq(BaseModel):
-    primary_norad: str
-    secondary_norad: str
-    fuel_available_kg: float = 5.0
-    sat_mass_kg: float = 500.0
+
+class PlanRequest(BaseModel):
+    primary_norad: str = Field(min_length=1, max_length=12)
+    secondary_norad: str = Field(min_length=1, max_length=12)
+    fuel_available_kg: float = Field(default=5.0, ge=0.0, le=10000.0)
+    sat_mass_kg: float = Field(default=500.0, gt=0.0, le=500000.0)
+    window_hours: float = Field(default=24.0, gt=0.0, le=168.0)
+
 
 @router.post("/user/plan")
-def user_plan(req: PlanReq, authorization: str = Header(None)):
-    # THE SECURITY RULE FROM THE MEETING: only the owner may plan a maneuver.
-    owner = require_owner(req.primary_norad, authorization)
-    a = user_assess(AssessReq(primary_norad=req.primary_norad,
-                              secondary_norad=req.secondary_norad))
-    lead_h = max(1.0, min(a["tca_in_hours"] - 0.5, 12.0))
-    # along-track separation growth: ds ≈ 3 · dv · t  ->  dv to add 2 km of miss
-    target_gain_km = max(0.0, 2.0 - a["miss_km"])
-    t_s = lead_h * 3600.0
-    dv_ms = (target_gain_km * 1000.0) / (3.0 * t_s) if target_gain_km > 0 else 0.005
-    dv_ms = max(dv_ms, 0.005)
-    fuel_kg = req.sat_mass_kg * dv_ms / 2200.0 / 9.81 * 9.81  # m*dv/Isp*g simplif.
-    fuel_kg = req.sat_mass_kg * dv_ms / (2200.0 * 9.81)
-    new_miss = a["miss_km"] + 3.0 * dv_ms * t_s / 1000.0
-    new_pc = a["pc"] * float(np.exp(-(new_miss ** 2 - a["miss_km"] ** 2) / (2 * 0.75 ** 2)))
-    checks = [
-        {"check": "owner_authority", "pass": True},
-        {"check": "fuel_available", "pass": fuel_kg <= req.fuel_available_kg},
-        {"check": "post_maneuver_pc_below_threshold", "pass": new_pc < 1e-4},
-        {"check": "lead_time_adequate", "pass": lead_h >= 1.0},
-    ]
-    verdict = "APPROVED" if all(c["pass"] for c in checks) else "REJECTED"
-    return {
+def user_plan(request: PlanRequest, authorization: Optional[str] = Header(None)):
+    """
+    Owner-authorized avoidance plan for a registered satellite.
+
+    Maneuver authority is restricted to the owning operator: planning a burn on
+    another operator's asset is refused before any computation is done.
+    """
+    owner = require_owner(request.primary_norad, authorization)
+    settings = get_settings()
+
+    sat_a, meta_a = _satrec(request.primary_norad)
+    sat_b, meta_b = _satrec(request.secondary_norad)
+    start = datetime.now(timezone.utc)
+    approach = astro.find_primary_close_approach(
+        sat_a, sat_b, start, request.window_hours * 3600.0,
+        coarse_step_s=settings.screen_coarse_step_s,
+    )
+    if approach is None:
+        raise ApiError(
+            422, "Neither element set propagates across the window.", "unprocessable"
+        )
+
+    prop_time_s = max(approach.tca_offset_s, 0.0)
+    sigma = screening_service.TLE_PRIMARY_SIGMA_KM
+    Cp = rtn_to_eci_cov(
+        np.diag(np.asarray(sigma) ** 2), approach.r_primary, approach.v_primary
+    )
+    C2 = rtn_to_eci_cov(
+        secondary_covariance_rtn(prop_time_s),
+        approach.r_secondary, approach.v_secondary,
+    )
+    tca_s = max(approach.tca_offset_s, 600.0)
+
+    assessment = _assess(
+        request.primary_norad, request.secondary_norad, request.window_hours
+    )
+    plan = plan_maneuver(
+        approach.r_primary, approach.v_primary, Cp,
+        approach.r_secondary, approach.v_secondary, C2,
+        hbr=settings.hbr_km, tca_s=tca_s, sat_mass_kg=request.sat_mass_kg,
+    )
+
+    response = {
         "authorized_operator": owner,
-        "assessment": a,
-        "recommendation": {
-            "dv_magnitude_ms": round(dv_ms, 4), "direction": "prograde",
-            "burn_lead_time_h": round(lead_h, 1),
-            "fuel_kg": round(fuel_kg, 4),
-            "predicted_new_miss_km": round(new_miss, 2),
-            "predicted_new_pc": new_pc,
-        },
-        "safety_validation": {"checks": checks},
-        "verdict": verdict,
-        "note": "Owner-authorized decision-support recommendation. A human "
-                "operator executes via the flight system — ISDMAAS does not "
-                "command the spacecraft.",
+        "assessment": assessment,
+        "pc_action_threshold": PC_THRESHOLD,
+        "action_required": plan["action_required"],
+        "note": (
+            "Owner-authorized decision-support recommendation. A human operator "
+            "executes via the flight system — ISDMAAS does not command the "
+            "spacecraft."
+        ),
     }
+
+    recommendation = plan.get("recommendation")
+    if not isinstance(recommendation, dict):
+        response["verdict"] = "NO_ACTION"
+        response["recommendation"] = recommendation
+        return response
+
+    mission_sma, _, _ = orbital_elements(approach.r_primary, approach.v_primary)
+    sign = 1.0 if recommendation["direction"] == "prograde" else -1.0
+    report = validate_maneuver(
+        approach.r_primary, approach.v_primary, Cp,
+        approach.r_secondary, approach.v_secondary, C2,
+        settings.hbr_km, tca_s,
+        recommendation["dv_magnitude_ms"], sign,
+        recommendation["burn_lead_time_h"], recommendation["fuel_kg"],
+        fuel_available_kg=request.fuel_available_kg,
+        mission_sma_km=mission_sma,
+        Cp_rtn_diag=sigma,
+        primary_sat=sat_a,
+    )
+    # The owner check already passed, and it is part of the audit trail an
+    # operator reads, so it is recorded alongside the physics checks.
+    report["checks"].insert(
+        0,
+        {
+            "check": "owner_authority",
+            "pass": True,
+            "reason": f"{owner} holds maneuver authority for NORAD "
+                      f"{request.primary_norad}",
+        },
+    )
+    response["recommendation"] = recommendation
+    response["options"] = plan["options"]
+    response["safety_validation"] = report
+    response["verdict"] = report["verdict"]
+    return response
+
 
 def install_user_pipeline(app):
     app.include_router(router)

@@ -1,247 +1,475 @@
 """
-auth_store.py — multi-operator login & satellite ownership for the ISDMAAS demo.
-=================================================================================
-Implements the meeting-agreed demo flow (Jun 30, Partho Ghosh):
-  - Each satellite OPERATOR logs in with their own account.
-  - Each operator registers their OWN satellite TLEs.
-  - Only the owning operator has authority over their satellites (maneuver
-    approval on someone else's asset -> 403 SECURITY VIOLATION).
-  - Two demo operators are pre-seeded with fictitious satellites on a collision
-    course, so the two-owner approval story can be shown immediately.
+auth_store.py — operator accounts, sessions and satellite ownership.
 
-DEMO-GRADE security (honest note): tokens are random hex held in a JSON file;
-passwords are salted-SHA256. Fine for a live demo, NOT production auth (no
-HTTPS enforcement, no expiry, no rate limiting). Say exactly that if asked.
+Security model
+--------------
+Each satellite OPERATOR has an account. Each operator registers their own
+satellite element sets. Only the owning operator has maneuver authority over
+their satellites; planning a burn on someone else's asset is refused with 403.
 
-Wiring (2 lines at the BOTTOM of phase11_api.py):
+What this is now (and was not before):
+
+  * Passwords are PBKDF2-HMAC-SHA256 at 240 000 iterations, salted per user, and
+    legacy single-round SHA-256 records are upgraded on the owner's next login.
+  * Session tokens are 256-bit opaque values; only their SHA-256 digest is
+    stored, and they expire.
+  * Login and registration are rate limited per client address, and a failed
+    login costs the same time as a successful one so the response does not
+    reveal whether the username exists.
+  * Credentials live in a gitignored SQLite database, not in a JSON file inside
+    the repository.
+
+Honest remaining limits, which belong in any pilot conversation: this is
+single-node session storage with no multi-factor, no password reset flow and no
+audit export. It is appropriate for a pilot behind TLS; it is not a replacement
+for an identity provider.
+
+Wiring (in phase11_api.py):
     from auth_store import install_auth
     install_auth(app)
 """
-import os, json, hashlib, secrets, threading
-from fastapi import APIRouter, HTTPException, Header
-from pydantic import BaseModel
+from __future__ import annotations
 
-_STORE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_store.json")
-_LOCK = threading.Lock()
+import secrets
+import sqlite3
+from datetime import datetime, timezone
+from typing import Dict, Optional
 
-# ----------------------------------------------------------------------------
-# storage helpers
-# ----------------------------------------------------------------------------
-def _load():
-    if not os.path.exists(_STORE):
-        return {"users": {}, "tokens": {}, "satellites": {}}
-    with open(_STORE, encoding="utf-8") as f:
-        return json.load(f)
+from fastapi import APIRouter, Depends, Header, Request
+from pydantic import BaseModel, Field
+from sgp4.api import Satrec
 
-def _save(d):
-    tmp = _STORE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, indent=1)
-    os.replace(tmp, _STORE)
+from isdmaas_core.config import get_settings
+from isdmaas_core.errors import ApiError
+from isdmaas_core.logging_config import get_logger
+from isdmaas_core.security import (
+    SlidingWindowLimiter,
+    hash_password,
+    normalize_username,
+    new_session_token,
+    parse_bearer,
+    validate_password,
+    verify_password,
+)
+from isdmaas_core.store import Store, get_store
 
-def _hash_pw(pw, salt):
-    return hashlib.sha256((salt + pw).encode()).hexdigest()
+log = get_logger("isdmaas.auth")
+router = APIRouter(tags=["auth"])
 
-# ----------------------------------------------------------------------------
-# fictitious demo TLEs — two satellites in the SAME orbital plane, opposite
-# phasing drift, built so their paths cross (a plausible conjunction geometry).
-# Checksums are computed programmatically so the TLEs are always valid.
-# ----------------------------------------------------------------------------
-def _tle_checksum(line):
-    s = 0
+# Credentials published in this repository's own demo material. They are seeded
+# only in development, and the password policy refuses them for real accounts.
+DEMO_OPERATORS = [
+    ("operator_a", "alpha123", "90001", "ALPHASAT-DEMO"),
+    ("operator_b", "bravo123", "90002", "BRAVOSAT-DEMO"),
+]
+
+_login_limiter: Optional[SlidingWindowLimiter] = None
+_register_limiter: Optional[SlidingWindowLimiter] = None
+
+
+def _store() -> Store:
+    settings = get_settings()
+    return get_store(settings.auth_db, settings.token_ttl_hours)
+
+
+def _limiters():
+    global _login_limiter, _register_limiter
+    if _login_limiter is None:
+        settings = get_settings()
+        _login_limiter = SlidingWindowLimiter(
+            settings.login_rate_limit, settings.login_rate_window_s
+        )
+        _register_limiter = SlidingWindowLimiter(
+            max(3, settings.login_rate_limit // 2), settings.login_rate_window_s
+        )
+    return _login_limiter, _register_limiter
+
+
+def client_key(request: Request) -> str:
+    """
+    Rate-limit key for a request: the peer address, and nothing else.
+
+    It is tempting to read X-Forwarded-For here so the limiter sees the real
+    client behind a proxy. Do not. That header is set by the caller, so keying on
+    it hands an attacker a fresh, empty rate-limit bucket on every request simply
+    by incrementing a number — the limiter would count to ten and never fire.
+    Mixing it into a composite key does not help either: a new forwarded value
+    still produces a new key.
+
+    The correct place to resolve the real client is the ASGI server, which knows
+    which peers are trusted proxies. Run uvicorn with `--proxy-headers
+    --forwarded-allow-ips '<proxy addresses>'` and `request.client.host` becomes
+    the real client address for requests that actually came through the proxy,
+    and stays the socket address for everything else. DEPLOY.md carries that
+    flag in every example command.
+    """
+    return request.client.host if request.client else "unknown"
+
+
+# ---------------------------------------------------------------- demo TLEs
+def _tle_checksum(line: str) -> str:
+    total = 0
     for ch in line[:68]:
-        if ch.isdigit(): s += int(ch)
-        elif ch == "-": s += 1
-    return str(s % 10)
+        if ch.isdigit():
+            total += int(ch)
+        elif ch == "-":
+            total += 1
+    return str(total % 10)
 
-def _finalize(l):
-    l = l.ljust(68)[:68]
-    return l + _tle_checksum(l)
 
-def _demo_tles():
-    # NORADs in the 90000+ "analyst/fictitious" range so they never collide with
-    # real catalog IDs. Geometry: SAME RAAN and node-crossing phase but planes
-    # inclined 53° vs 73° -> the two orbits intersect at the node line, and both
-    # satellites arrive there together each rev (same mean motion) with a
-    # ~2.6 km/s crossing speed. A tiny mean-anomaly offset keeps the miss at a
-    # few hundred metres instead of exactly zero. The epoch is generated AT SEED
-    # TIME so the geometry is valid whenever the demo runs (differential nodal
-    # precession would otherwise separate the planes within days).
-    from datetime import datetime, timezone
+def _finalize(line: str) -> str:
+    line = line.ljust(68)[:68]
+    return line + _tle_checksum(line)
+
+
+def _demo_tles() -> Dict[str, tuple]:
+    """
+    Two fictitious satellites on crossing orbits.
+
+    NORAD ids sit in the 90000+ analyst range so they can never collide with a
+    real catalog id. The epoch is generated at seed time because differential
+    nodal precession would separate the two planes within days of a fixed epoch,
+    quietly turning the demo conjunction into a non-event.
+    """
     now = datetime.now(timezone.utc)
-    doy = (now - datetime(now.year, 1, 1, tzinfo=timezone.utc)).total_seconds() / 86400.0 + 1
-    epoch = f"{now.year % 100:02d}{doy:012.8f}"
-    a1 = _finalize(f"1 90001U 26900A   {epoch}  .00001000  00000-0  10000-3 0  999")
-    a2 = _finalize("2 90001  90.0000 120.0000 0001000  90.0000 250.0000 15.50000000    1")
-    b1 = _finalize(f"1 90002U 26900B   {epoch}  .00001000  00000-0  10000-3 0  999")
-    b2 = _finalize("2 90002  90.0000 300.0000 0001000  90.0000  90.2150 15.50000000    1")
-    return {"90001": ("ALPHASAT-DEMO", a1, a2), "90002": ("BRAVOSAT-DEMO", b1, b2)}
+    day_of_year = (
+        now - datetime(now.year, 1, 1, tzinfo=timezone.utc)
+    ).total_seconds() / 86400.0 + 1
+    epoch = f"{now.year % 100:02d}{day_of_year:012.8f}"
+    return {
+        "90001": (
+            "ALPHASAT-DEMO",
+            _finalize(f"1 90001U 26900A   {epoch}  .00001000  00000-0  10000-3 0  999"),
+            _finalize("2 90001  90.0000 120.0000 0001000  90.0000 250.0000 15.50000000    1"),
+        ),
+        "90002": (
+            "BRAVOSAT-DEMO",
+            _finalize(f"1 90002U 26900B   {epoch}  .00001000  00000-0  10000-3 0  999"),
+            _finalize("2 90002  90.0000 300.0000 0001000  90.0000  90.2150 15.50000000    1"),
+        ),
+    }
 
-def _seed_if_empty(d):
-    if d["users"]:
-        return d
-    for uname, pw, norad in [("operator_a", "alpha123", "90001"),
-                             ("operator_b", "bravo123", "90002")]:
-        salt = secrets.token_hex(8)
-        d["users"][uname] = {"salt": salt, "pw": _hash_pw(pw, salt)}
-        name, l1, l2 = _demo_tles()[norad]
-        d["satellites"][norad] = {"owner": uname, "name": name, "tle1": l1, "tle2": l2}
-    return d
 
-# ----------------------------------------------------------------------------
-# auth primitives (used by user_conjunctions too)
-# ----------------------------------------------------------------------------
-def user_from_token(authorization):
-    """Resolve 'Bearer <token>' -> username, or None."""
-    if not authorization or not authorization.startswith("Bearer "):
+def seed_demo_operators() -> None:
+    """Create the demo accounts if the registry is empty. Development only."""
+    settings = get_settings()
+    if not settings.enable_demo_seed or settings.is_production:
+        return
+    store = _store()
+    if store.user_count() > 0:
+        return
+    tles = _demo_tles()
+    for username, password, norad, _name in DEMO_OPERATORS:
+        try:
+            store.create_user(
+                username, hash_password(password, settings.pbkdf2_iterations)
+            )
+        except sqlite3.IntegrityError:
+            continue
+        name, line1, line2 = tles[norad]
+        store.upsert_satellite(norad, username, name, line1, line2)
+    log.warning(
+        "seeded %d DEMO operator accounts with published passwords — "
+        "development mode only; set ISDMAAS_ENV=production to disable",
+        len(DEMO_OPERATORS),
+    )
+
+
+# ------------------------------------------------------- auth primitives
+def user_from_token(authorization: Optional[str]) -> Optional[str]:
+    """Resolve `Bearer <token>` to a username, or None."""
+    token = parse_bearer(authorization)
+    if not token:
         return None
-    tok = authorization[7:].strip()
-    with _LOCK:
-        d = _load()
-        return d["tokens"].get(tok)
+    session = _store().resolve_session(token)
+    return session.username if session else None
 
-def get_satellite(norad):
-    with _LOCK:
-        return _load()["satellites"].get(str(norad))
 
-def require_owner(norad, authorization):
-    """403 unless the token's user owns the satellite. Returns username."""
-    user = user_from_token(authorization)
-    if not user:
-        raise HTTPException(401, "Not logged in. Operator login required.")
-    sat = get_satellite(norad)
-    if not sat:
-        raise HTTPException(404, f"Satellite {norad} is not registered to any operator.")
-    if sat["owner"] != user:
-        raise HTTPException(403,
-            f"SECURITY: {user} has no authority over NORAD {norad} "
-            f"(owned by {sat['owner']}). Maneuver authority is restricted to the "
-            f"owning operator.")
-    return user
+def get_satellite(norad) -> Optional[dict]:
+    """Registered satellite record as a plain dict, or None."""
+    satellite = _store().get_satellite(str(norad))
+    if satellite is None:
+        return None
+    return {
+        "owner": satellite.owner,
+        "name": satellite.name,
+        "tle1": satellite.tle1,
+        "tle2": satellite.tle2,
+        "updated_utc": satellite.updated_utc,
+    }
 
-# ----------------------------------------------------------------------------
-# API router
-# ----------------------------------------------------------------------------
-router = APIRouter()
 
-class Creds(BaseModel):
-    username: str
-    password: str
+def require_user(authorization: Optional[str] = Header(None)) -> str:
+    """FastAPI dependency: the authenticated username, or 401."""
+    username = user_from_token(authorization)
+    if not username:
+        raise ApiError(
+            401,
+            "Operator login required.",
+            code="unauthenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return username
 
-class NewSat(BaseModel):
-    name: str
-    tle1: str
-    tle2: str
 
-@router.post("/auth/register")
-def register(c: Creds):
-    uname = c.username.strip().lower()
-    if not uname or not c.password:
-        raise HTTPException(400, "username and password required")
-    with _LOCK:
-        d = _seed_if_empty(_load())
-        if uname in d["users"]:
-            raise HTTPException(409, "username already exists")
-        salt = secrets.token_hex(8)
-        d["users"][uname] = {"salt": salt, "pw": _hash_pw(c.password, salt)}
-        _save(d)
-    return {"ok": True, "username": uname}
+def require_owner(norad, authorization: Optional[str]) -> str:
+    """403 unless the token's user owns the satellite. Returns the username."""
+    username = user_from_token(authorization)
+    if not username:
+        raise ApiError(
+            401,
+            "Operator login required.",
+            code="unauthenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    satellite = _store().get_satellite(str(norad))
+    if satellite is None:
+        raise ApiError(
+            404, f"Satellite {norad} is not registered to any operator.", "not_found"
+        )
+    if satellite.owner != username:
+        # The owner's identity is deliberately NOT disclosed: knowing which
+        # operator holds an asset is itself commercially sensitive.
+        log.warning(
+            "authority denied", extra={"actor": username, "norad": str(norad)}
+        )
+        raise ApiError(
+            403,
+            f"You do not have maneuver authority over NORAD {norad}. "
+            "Maneuver authority is restricted to the owning operator.",
+            code="forbidden",
+        )
+    return username
+
+
+# ------------------------------------------------------------------- models
+class Credentials(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=1024)
+
+
+class NewSatellite(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    tle1: str = Field(min_length=60, max_length=200)
+    tle2: str = Field(min_length=60, max_length=200)
+
+
+# ---------------------------------------------------------------- endpoints
+@router.post("/auth/register", status_code=201)
+def register(credentials: Credentials, request: Request):
+    _, limiter = _limiters()
+    decision = limiter.hit(client_key(request))
+    if not decision.allowed:
+        raise ApiError(
+            429,
+            "Too many registration attempts. Try again shortly.",
+            code="rate_limited",
+            headers={"Retry-After": str(decision.retry_after_s)},
+        )
+    try:
+        username = normalize_username(credentials.username)
+        validate_password(credentials.password)
+    except ValueError as exc:
+        raise ApiError(422, str(exc), code="unprocessable") from exc
+
+    settings = get_settings()
+    try:
+        _store().create_user(
+            username, hash_password(credentials.password, settings.pbkdf2_iterations)
+        )
+    except sqlite3.IntegrityError as exc:
+        raise ApiError(409, "That username is already registered.", "conflict") from exc
+    log.info("operator registered", extra={"actor": username})
+    return {"ok": True, "username": username}
+
 
 @router.post("/auth/login")
-def login(c: Creds):
-    uname = c.username.strip().lower()
-    with _LOCK:
-        d = _seed_if_empty(_load())
-        u = d["users"].get(uname)
-        if not u or _hash_pw(c.password, u["salt"]) != u["pw"]:
-            raise HTTPException(401, "invalid username or password")
-        tok = secrets.token_hex(16)
-        d["tokens"][tok] = uname
-        _save(d)
-    return {"token": tok, "username": uname}
+def login(credentials: Credentials, request: Request):
+    limiter, _ = _limiters()
+    key = client_key(request)
+    decision = limiter.hit(key)
+    if not decision.allowed:
+        raise ApiError(
+            429,
+            "Too many failed sign-in attempts. Try again shortly.",
+            code="rate_limited",
+            headers={"Retry-After": str(decision.retry_after_s)},
+        )
+
+    settings = get_settings()
+    store = _store()
+    try:
+        username = normalize_username(credentials.username)
+    except ValueError:
+        username = ""
+
+    user = store.get_user(username) if username else None
+    stored_hash = user["password_hash"] if user else ""
+    valid, needs_rehash = verify_password(credentials.password, stored_hash)
+    if not user or not valid:
+        if not user:
+            # Spend comparable work on an unknown username so response time does
+            # not distinguish "no such account" from "wrong password".
+            hash_password(secrets.token_urlsafe(16), settings.pbkdf2_iterations)
+        log.info("failed sign-in", extra={"attempted_user": username or "(invalid)"})
+        raise ApiError(401, "Invalid username or password.", code="unauthenticated")
+    if user["disabled"]:
+        raise ApiError(403, "This account is disabled.", code="forbidden")
+
+    if needs_rehash:
+        store.update_password_hash(
+            username, hash_password(credentials.password, settings.pbkdf2_iterations)
+        )
+        log.info("password hash upgraded", extra={"actor": username})
+
+    store.purge_expired_sessions()
+    token = new_session_token()
+    expires = store.create_session(username, token)
+    store.mark_login(username)
+    limiter.reset(key)
+    log.info("operator signed in", extra={"actor": username})
+    return {
+        "token": token,
+        "username": username,
+        "expires_utc": expires.isoformat(),
+        "token_type": "Bearer",
+    }
+
 
 @router.post("/auth/logout")
-def logout(authorization: str = Header(None)):
-    if authorization and authorization.startswith("Bearer "):
-        tok = authorization[7:].strip()
-        with _LOCK:
-            d = _load()
-            d["tokens"].pop(tok, None)
-            _save(d)
+def logout(authorization: Optional[str] = Header(None)):
+    token = parse_bearer(authorization)
+    if token:
+        _store().delete_session(token)
     return {"ok": True}
 
+
+@router.post("/auth/logout-all")
+def logout_all(username: str = Depends(require_user)):
+    """Invalidate every session for the caller — the response to a lost token."""
+    revoked = _store().delete_sessions_for(username)
+    log.info("all sessions revoked", extra={"actor": username, "revoked": revoked})
+    return {"ok": True, "sessions_revoked": revoked}
+
+
 @router.get("/auth/me")
-def me(authorization: str = Header(None)):
-    user = user_from_token(authorization)
-    if not user:
-        raise HTTPException(401, "not logged in")
-    with _LOCK:
-        d = _load()
-        mine = {n: {"name": s["name"]} for n, s in d["satellites"].items()
-                if s["owner"] == user}
-    return {"username": user, "satellites": mine}
+def me(username: str = Depends(require_user)):
+    satellites = {
+        s.norad: {"name": s.name} for s in _store().satellites_for(username)
+    }
+    return {"username": username, "satellites": satellites}
+
 
 @router.get("/my/satellites")
-def my_sats(authorization: str = Header(None)):
-    user = user_from_token(authorization)
-    if not user:
-        raise HTTPException(401, "not logged in")
-    with _LOCK:
-        d = _load()
-    mine = [{"norad": n, "name": s["name"]} for n, s in d["satellites"].items()
-            if s["owner"] == user]
-    others = [{"norad": n, "name": s["name"], "owner": s["owner"]}
-              for n, s in d["satellites"].items() if s["owner"] != user]
+def my_satellites(username: str = Depends(require_user)):
+    store = _store()
+    mine = [
+        {"norad": s.norad, "name": s.name, "updated_utc": s.updated_utc}
+        for s in store.satellites_for(username)
+    ]
+    # Other operators' assets are listed so a cross-operator conjunction can be
+    # assessed, but the owner is reported as an opaque label rather than an
+    # account name — who flies what is commercially sensitive.
+    others = [
+        {"norad": s.norad, "name": s.name, "owner": "another operator"}
+        for s in store.list_satellites()
+        if s.owner != username
+    ]
     return {"mine": mine, "others": others}
 
-@router.post("/my/satellites")
-def add_sat(s: NewSat, authorization: str = Header(None)):
-    user = user_from_token(authorization)
-    if not user:
-        raise HTTPException(401, "not logged in — log in to register a satellite")
-    l1, l2 = s.tle1.strip(), s.tle2.strip()
-    if not (l1.startswith("1 ") and l2.startswith("2 ") and len(l1) >= 68 and len(l2) >= 68):
-        raise HTTPException(422, "TLE lines look malformed (need standard 69-char lines 1/ and 2/)")
-    # validate the TLE actually propagates
+
+@router.post("/my/satellites", status_code=201)
+def add_satellite(payload: NewSatellite, username: str = Depends(require_user)):
+    line1, line2 = payload.tle1.strip(), payload.tle2.strip()
+    if not (line1.startswith("1 ") and line2.startswith("2 ")):
+        raise ApiError(
+            422,
+            "TLE lines are malformed: line 1 must start with '1 ' and line 2 "
+            "with '2 '.",
+            code="unprocessable",
+        )
+    if len(line1) < 68 or len(line2) < 68:
+        raise ApiError(
+            422, "TLE lines must be the standard 69-character format.", "unprocessable"
+        )
     try:
-        from sgp4.api import Satrec
-        sat = Satrec.twoline2rv(l1, l2)
-        norad = str(sat.satnum)
-    except Exception as e:
-        raise HTTPException(422, f"TLE failed to parse: {e}")
-    with _LOCK:
-        d = _seed_if_empty(_load())
-        existing = d["satellites"].get(norad)
-        if existing and existing["owner"] != user:
-            raise HTTPException(409, f"NORAD {norad} already registered to {existing['owner']}")
-        d["satellites"][norad] = {"owner": user, "name": s.name.strip() or norad,
-                                  "tle1": l1, "tle2": l2}
-        _save(d)
-    # durable history for operations + future training (ops_db is optional)
+        satrec = Satrec.twoline2rv(line1, line2)
+        norad = str(satrec.satnum)
+    except Exception as exc:
+        raise ApiError(422, f"TLE failed to parse: {exc}", "unprocessable") from exc
+
+    store = _store()
+    existing = store.get_satellite(norad)
+    if existing and existing.owner != username:
+        raise ApiError(
+            409,
+            f"NORAD {norad} is already registered to another operator.",
+            code="conflict",
+        )
+    name = payload.name.strip() or norad
+    store.upsert_satellite(norad, username, name, line1, line2)
+
+    # Durable history for operations and future training. Optional by design:
+    # a failure to log history must never block registering an asset.
     try:
         import ops_db
-        ops_db.record_tle(norad, s.name.strip() or norad, user, l1, l2)
+
+        ops_db.record_tle(norad, name, username, line1, line2)
     except Exception:
-        pass
-    return {"ok": True, "norad": norad, "name": s.name}
+        log.warning("ops_db TLE history write failed", exc_info=True)
+    log.info("satellite registered", extra={"actor": username, "norad": norad})
+    return {"ok": True, "norad": norad, "name": name}
+
+
+@router.delete("/my/satellites/{norad}")
+def remove_satellite(norad: str, username: str = Depends(require_user)):
+    if not _store().delete_satellite(norad, username):
+        raise ApiError(
+            404,
+            f"NORAD {norad} is not registered to you.",
+            code="not_found",
+        )
+    log.info("satellite removed", extra={"actor": username, "norad": norad})
+    return {"ok": True, "norad": norad}
+
 
 @router.get("/auth/demo-info")
 def demo_info():
-    """The demo scenario, for the console's help panel."""
-    with _LOCK:
-        _save(_seed_if_empty(_load()))
+    """
+    The demo scenario, for the console's help panel.
+
+    Present only in development. In production this returns 404 rather than
+    publishing working credentials for the deployment.
+    """
+    settings = get_settings()
+    if settings.is_production or not settings.enable_demo_seed:
+        raise ApiError(
+            404, "Demo accounts are not enabled on this deployment.", "not_found"
+        )
     return {
+        "development_only": True,
         "operators": [
-            {"username": "operator_a", "password": "alpha123", "satellite": "ALPHASAT-DEMO (90001)"},
-            {"username": "operator_b", "password": "bravo123", "satellite": "BRAVOSAT-DEMO (90002)"},
+            {"username": u, "password": p, "satellite": f"{n} ({norad})"}
+            for u, p, norad, n in DEMO_OPERATORS
         ],
-        "scenario": "ALPHASAT-DEMO and BRAVOSAT-DEMO are fictitious satellites on "
-                    "crossing orbits. Log in as each operator to see that only the "
-                    "owner can approve a maneuver for their own satellite.",
+        "scenario": (
+            "ALPHASAT-DEMO and BRAVOSAT-DEMO are fictitious satellites on "
+            "crossing orbits. Sign in as each operator to see that only the "
+            "owner can approve a maneuver for their own satellite."
+        ),
+        "warning": (
+            "These passwords are published in the project's source. They are "
+            "seeded in development only and are rejected by the password policy "
+            "for real accounts."
+        ),
     }
+
 
 def install_auth(app):
     app.include_router(router)
-    with _LOCK:
-        _save(_seed_if_empty(_load()))
+    settings = get_settings()
+    store = get_store(settings.auth_db, settings.token_ttl_hours)
+    store.import_legacy_json(settings.data_dir.parent / "auth_store.json")
+    seed_demo_operators()
+    store.purge_expired_sessions()
     return app
