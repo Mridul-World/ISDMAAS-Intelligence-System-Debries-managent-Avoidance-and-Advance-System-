@@ -25,7 +25,8 @@ This module imports the verified analytical engine for cross-checking.
 ================================================================================
 """
 import numpy as np
-from phase7_collision import assess_conjunction, project_to_plane, pc_2d_quadrature
+from phase7_collision import (assess_conjunction, project_to_plane,
+                              pc_2d_quadrature)
 
 
 def _sample_states(mean_r, mean_v, cov_eci, n, rng):
@@ -84,6 +85,22 @@ def compare_methods(r1, v1, C1, r2, v2, C2, hbr_km, n_samples=50000, seed=0):
     ana = assess_conjunction(r1, v1, C1, r2, v2, C2, hbr_km, 600)
     mc = monte_carlo_pc(r1, v1, C1, r2, v2, C2, hbr_km, n_samples=n_samples, seed=seed)
     pa, pm = ana["pc"], mc["pc"]
+    # The analytical method declines to produce a number for an invalid
+    # covariance or a geometry outside the short-encounter regime it assumes.
+    # Monte Carlo makes neither assumption, so it still has an answer -- but the
+    # two cannot be said to agree when only one of them ran.
+    if pa is None:
+        return {
+            "analytical_pc": None,
+            "monte_carlo_pc": pm,
+            "mc_ci": [mc["ci_low"], mc["ci_high"]],
+            "mc_hits": mc["n_hits"], "mc_samples": mc["n_samples"],
+            "miss_km": ana["miss_distance_km"],
+            "agree": False,
+            "risk_level": ana["risk_level"],
+            "note": ("analytical Pc unavailable (" + str(ana["risk_level"])
+                     + "); Monte Carlo is the only estimate here"),
+        }
     # agreement: MC CI contains analytical, or both effectively zero
     in_ci = mc["ci_low"] <= pa <= mc["ci_high"]
     both_tiny = pa < 1e-6 and pm < 1e-6

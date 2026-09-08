@@ -35,7 +35,8 @@ import numpy as np
 from datetime import timedelta
 from sgp4.api import jday
 from phase7_collision import (assess_conjunction, secondary_covariance_rtn,
-                              rtn_to_eci_cov, pc_2d_quadrature, project_to_plane)
+                              rtn_to_eci_cov, pc_2d_quadrature, project_to_plane,
+                              pc_for_safety, pc_text)
 from phase8_maneuver import apply_along_track_dv, PC_SAFE, PC_THRESHOLD
 
 MU = 398600.4418
@@ -90,10 +91,11 @@ def check_threat_resolved(r_post, v_post, Cp, r2, v2, C2, hbr):
     C = Cp + C2
     miss2d, C2d = project_to_plane(rel, C, v_rel)
     pc = pc_2d_quadrature(miss2d, C2d, hbr)
-    ok = pc < PC_THRESHOLD
+    ok = pc_for_safety(pc) < PC_THRESHOLD
     return {"check": "original_threat_resolved", "pass": bool(ok),
             "post_maneuver_pc": pc, "post_maneuver_miss_km": float(np.linalg.norm(rel)),
-            "reason": "threat cleared" if ok else f"Pc {pc:.2e} still above threshold"}
+            "reason": "threat cleared" if ok
+                      else f"Pc {pc_text(pc)} still above threshold"}
 
 
 def check_no_new_conjunction(psat_post_states, catalog, epoch, window_s,
@@ -143,17 +145,21 @@ def check_no_new_conjunction(psat_post_states, catalog, epoch, window_s,
         Cp = rtn_to_eci_cov(np.diag(np.array(Cp_rtn_diag) ** 2), rp_at, vp_at)
         C2 = rtn_to_eci_cov(secondary_covariance_rtn(window_s / 2), r2_at, v2_at)
         res = assess_conjunction(rp_at, vp_at, Cp, r2_at, v2_at, C2, hbr, 600)
-        if res["pc"] > worst["pc"]:
+        # An unavailable Pc ranks as the worst case, not as zero. Comparing
+        # res["pc"] directly would raise TypeError on None and would read nan as
+        # "better than anything", which is how an unassessable new conjunction
+        # would have been reported as no new conjunction at all.
+        if pc_for_safety(res["pc"]) > pc_for_safety(worst["pc"]):
             worst = {"pc": res["pc"], "norad": norad, "name": name2,
                      "miss_km": res["miss_distance_km"]}
-    ok = worst["pc"] < PC_THRESHOLD
+    ok = pc_for_safety(worst["pc"]) < PC_THRESHOLD
     return {"check": "no_new_conjunction", "pass": bool(ok),
             "objects_rescreened": checked,
             "worst_new_pc": worst["pc"], "worst_new_object": worst["name"],
             "worst_new_norad": worst["norad"], "worst_new_miss_km": worst["miss_km"],
             "reason": "no new conjunction created" if ok
                       else f"burn creates new conjunction with {worst['name']} "
-                           f"(Pc {worst['pc']:.2e})"}
+                           f"(Pc {pc_text(worst['pc'])})"}
 
 
 def validate_maneuver(rp, vp, Cp, r2, v2, C2, hbr, tca_s,

@@ -14,6 +14,7 @@ Run: python phase7_selftest.py   ->  prints PASS/FAIL per check.
 import numpy as np
 from phase7_collision import (pc_2d_quadrature, pc_chan, assess_conjunction,
                               risk_level, secondary_covariance_rtn, rtn_to_eci_cov)
+from phase7_collision import pc_text
 
 ok = True
 def check(name, cond, detail=""):
@@ -68,8 +69,10 @@ r2 = np.array([7078.2, 0.0, 0.0]); v2 = np.array([0.0, 0.0, 7.5])
 C1 = rtn_to_eci_cov(np.diag([0.04 ** 2, 3.0 ** 2, 0.05 ** 2]), r1, v1)   # Phase-6-like
 C2 = rtn_to_eci_cov(secondary_covariance_rtn(72 * 3600), r2, v2)
 res = assess_conjunction(r1, v1, C1, r2, v2, C2, hbr_km=0.02)
-check("assess runs + sane", 0 <= res["pc"] <= 1 and res["miss_distance_km"] >= 0,
-      f"miss={res['miss_distance_km']:.3f}km Pc={res['pc']:.2e} risk={res['risk_level']}")
+check("assess runs + sane",
+      res["pc"] is not None and 0 <= res["pc"] <= 1 and res["miss_distance_km"] >= 0,
+      f"miss={res['miss_distance_km']:.3f}km Pc={pc_text(res['pc'])} "
+      f"risk={res['risk_level']}")
 
 print("-" * 60)
 print("ALL TESTS PASS" if ok else "SOME TESTS FAILED")

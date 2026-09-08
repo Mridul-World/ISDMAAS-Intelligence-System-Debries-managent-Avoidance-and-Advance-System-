@@ -108,6 +108,9 @@ jobs:
       - name: Co-located object handling
         run: python -m pytest tests/scientific/test_co_location.py -v
         working-directory: phase11
+      - name: One shared engine, no stale private copies
+        run: python -m pytest tests/scientific/test_engine_is_shared.py -v
+        working-directory: phase11
 
   security:
     name: Security (safety-critical)

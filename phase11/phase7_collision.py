@@ -79,6 +79,51 @@ def combined_hbr(radius_a_km: float, radius_b_km: float) -> float:
     return float(max(radius_a_km, 0.0) + max(radius_b_km, 0.0))
 
 
+# ------------------------------------------------- handling an unavailable Pc
+#
+# `assess_conjunction` returns pc=None when it will not stand behind a number:
+# the covariance failed validation, or the geometry is outside the short-
+# encounter regime the 2-D formulation assumes. Callers must not compare that
+# value directly.
+#
+#   None > threshold  raises TypeError and kills the screening run
+#   nan  > threshold  is silently False, which turns "we could not tell" into
+#                     "no action required" -- the dangerous direction
+#
+# Both helpers below exist so that a safety comparison fails toward caution and
+# a report prints something honest instead of crashing on a format specifier.
+
+PC_UNAVAILABLE_TEXT = "unavailable"
+
+
+def pc_for_safety(pc) -> float:
+    """
+    Collapse an unavailable Pc to the worst case, for use in a safety comparison.
+
+    An unknown probability is treated as certainty of collision (1.0) so that
+    every `>= threshold` test escalates and every `< safe` test refuses to
+    confirm the threat is cleared. This is deliberately pessimistic: the cost of
+    a spurious escalation is a review, and the cost of the opposite is a
+    collision that was reported as "no action required".
+    """
+    if pc is None:
+        return 1.0
+    value = float(pc)
+    if math.isnan(value):
+        return 1.0
+    return value
+
+
+def pc_text(pc, spec: str = ".2e") -> str:
+    """Format a Pc for a report, tolerating the unavailable case."""
+    if pc is None:
+        return PC_UNAVAILABLE_TEXT
+    value = float(pc)
+    if math.isnan(value):
+        return PC_UNAVAILABLE_TEXT
+    return format(value, spec)
+
+
 # ---------------------------------------------------------------- TCA
 def find_tca(
     r1: np.ndarray,

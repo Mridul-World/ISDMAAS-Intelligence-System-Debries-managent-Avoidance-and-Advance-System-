@@ -38,11 +38,22 @@ for miss in [0.02, 0.05, 0.1]:
 check("MC agrees with analytical (close range)", all_agree)
 
 # 2. monotonic decreasing
+#
+# The miss distances have to span the uncertainty for this to test anything. The
+# combined radial 1-sigma here is 0.402 km, so the earlier range (0.02-0.25 km)
+# sat entirely inside 0.6 sigma: Pc is genuinely flat across it, and the four
+# values differed only by Monte Carlo noise. That range passed against the old
+# over-tight debris covariance (radial sigma 83 m) and stopped meaning anything
+# once secondary_covariance_rtn was recalibrated for TLE-tracked objects.
+#
+# 0.1 -> 1.0 km spans 0.25 to 2.5 sigma and separates the four Pc values by far
+# more than the sampling noise. Verified monotonic for seeds 0-5 at both 60k and
+# 200k samples; 200k is used for margin.
 pcs = []
-for miss in [0.02, 0.06, 0.12, 0.25]:
+for miss in [0.1, 0.5, 0.75, 1.0]:
     r2 = rp + miss*rhat; v2 = cross*speed
     C2 = rtn_to_eci_cov(secondary_covariance_rtn(8*3600), r2, v2)
-    pcs.append(monte_carlo_pc(rp, vp, Cp, r2, v2, C2, 0.02, n_samples=60000, seed=2)["pc"])
+    pcs.append(monte_carlo_pc(rp, vp, Cp, r2, v2, C2, 0.02, n_samples=200000, seed=2)["pc"])
 check("MC Pc decreases with miss", all(np.diff(pcs) <= 1e-6), f"{[f'{p:.2e}' for p in pcs]}")
 
 # 3. CI shrinks with more samples

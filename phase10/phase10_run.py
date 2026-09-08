@@ -21,6 +21,7 @@ import requests
 from datetime import datetime, timedelta
 from sgp4.api import Satrec, jday
 from phase7_collision import rtn_to_eci_cov, secondary_covariance_rtn, assess_conjunction
+from phase7_collision import pc_text
 from phase8_maneuver import plan_maneuver, fuel_kg
 from phase10_safety import validate_maneuver, orbital_elements
 
@@ -106,7 +107,8 @@ def main():
     plan = plan_maneuver(rp, vp, Cp, r2, v2, C2, hbr=0.02, tca_s=tca_s, sat_mass_kg=2300)
     print("=" * 66)
     print(f"PRE-MANEUVER: miss {plan['pre_maneuver']['miss_distance_km']:.4f} km  "
-          f"Pc {plan['pre_maneuver']['pc']:.2e}  {plan['pre_maneuver']['risk_level']}")
+          f"Pc {pc_text(plan['pre_maneuver']['pc'])}  "
+          f"{plan['pre_maneuver']['risk_level']}")
     if not isinstance(plan["recommendation"], dict):
         print("no maneuver:", plan["recommendation"]); return
     rec = plan["recommendation"]

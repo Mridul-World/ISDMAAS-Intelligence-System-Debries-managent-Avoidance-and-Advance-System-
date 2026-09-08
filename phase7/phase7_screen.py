@@ -32,6 +32,7 @@ from datetime import datetime, timezone, timedelta
 from sgp4.api import Satrec, jday
 from phase7_collision import (assess_conjunction, secondary_covariance_rtn,
                               rtn_to_eci_cov)
+from phase7_collision import pc_for_safety, pc_text
 
 CELESTRAK_ACTIVE = "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle"
 HBR_DEFAULT_KM = 0.020          # 20 m combined hard-body radius
@@ -194,12 +195,16 @@ def main():
             if res and res["miss_distance_km"] < COARSE_KM:
                 hits.append((sec, res))
         print(f"(shell-gated; ran TCA search on {checked} same-altitude objects)")
-        hits.sort(key=lambda x: -x[1]["pc"])
+        # An unavailable Pc sorts to the top rather than raising a TypeError:
+        # a conjunction we could not assess is the first one an operator should
+        # look at, not one that silently drops out of the ranking.
+        hits.sort(key=lambda x: -pc_for_safety(x[1]["pc"]))
         print(f"\n{len(hits)} conjunctions within {COARSE_KM} km:")
         print(f"{'NORAD':>8}{'miss_km':>10}{'Pc':>12}{'risk':>10}  name")
         for sec, res in hits[:30]:
             write_cdm(pname, norad, sec, epoch, res)
-            print(f"{sec:>8}{res['miss_distance_km']:>10.3f}{res['pc']:>12.2e}"
+            print(f"{sec:>8}{res['miss_distance_km']:>10.3f}"
+                  f"{pc_text(res['pc']):>12}"
                   f"{res['risk_level']:>10}  {res['secondary_name']}")
         print(f"\nCDMs saved in reports/conjunctions/")
     else:

@@ -16,6 +16,7 @@ import json
 import numpy as np
 from phase7_collision import (rtn_to_eci_cov, secondary_covariance_rtn,
                               assess_conjunction)
+from phase7_collision import pc_text
 from phase8_maneuver import (plan_maneuver, solve_min_dv, fuel_kg,
                              apply_along_track_dv, PC_SAFE, PC_THRESHOLD)
 
@@ -48,8 +49,9 @@ v2 = cross * speed
 C2 = rtn_to_eci_cov(np.diag([0.03**2, 0.1**2, 0.03**2]), r2, v2)
 
 pre = assess_conjunction(rp, vp, Cp, r2, v2, C2, 0.02, 600)
-check("constructed conjunction is CRITICAL", pre["pc"] > PC_THRESHOLD,
-      f"Pc={pre['pc']:.2e} risk={pre['risk_level']}")
+check("constructed conjunction is CRITICAL",
+      pre["pc"] is not None and pre["pc"] > PC_THRESHOLD,
+      f"Pc={pc_text(pre['pc'])} risk={pre['risk_level']}")
 
 # 1+2+3: plan a maneuver and verify it works
 plan = plan_maneuver(rp, vp, Cp, r2, v2, C2, hbr=0.02, tca_s=tca_s, sat_mass_kg=2300)

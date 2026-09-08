@@ -13,6 +13,7 @@ one; the planner logic is identical.
 import sys, json
 import numpy as np
 from phase7_collision import rtn_to_eci_cov, assess_conjunction
+from phase7_collision import pc_text
 from phase8_maneuver import plan_maneuver, PC_THRESHOLD, PC_SAFE
 
 
@@ -40,7 +41,7 @@ def main():
     print("CONJUNCTION  (pre-maneuver)")
     pm = plan["pre_maneuver"]
     print(f"  miss distance : {pm['miss_distance_km']:.4f} km")
-    print(f"  Pc            : {pm['pc']:.3e}")
+    print(f"  Pc            : {pc_text(pm['pc'], '.3e')}")
     print(f"  risk          : {pm['risk_level']}")
     print(f"  TCA           : t+{tca_h:.1f} h")
     print(f"  action needed : {plan['action_required']}")

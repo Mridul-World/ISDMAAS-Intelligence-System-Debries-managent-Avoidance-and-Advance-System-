@@ -36,6 +36,7 @@ from datetime import datetime, timezone, timedelta
 from sgp4.api import Satrec, jday
 from phase7_collision import (assess_conjunction, secondary_covariance_rtn,
                               rtn_to_eci_cov)
+from phase7_collision import pc_text
 from phase8_maneuver import plan_maneuver
 from historical_events import EVENTS
 
@@ -166,7 +167,7 @@ def replay(event_key):
           f"at T{(t_min - 24*3600)/3600:+.1f} h rel. to event")
     print(f"  relative speed   : {vrel:.2f} km/s  (documented "
           f"{ev['documented'].get('rel_velocity_kms','?')} km/s)")
-    print(f"  collision Pc     : {res['pc']:.2e}")
+    print(f"  collision Pc     : {pc_text(res['pc'])}")
     print(f"  risk level       : {res['risk_level']}")
     if tle_gap is not None:
         print(f"  NOTE: public-TLE miss ({res['miss_distance_km']:.0f} km) vs "
