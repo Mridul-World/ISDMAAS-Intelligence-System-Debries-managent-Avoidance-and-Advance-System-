@@ -206,7 +206,7 @@ taken seconds apart.
 |---|---|---|
 | Credentials in git history, not rotated | **P0** | **OPEN — provider action required** |
 | ML accuracy claims unreproducible | **P0** (claim only) | OPEN; serving path is safe |
-| Collision engine duplicated 6× and stale in `phase7/`–`phase13/` | P1 | OPEN — deliberately not propagated; those callers do `pre["pc"] > threshold` and would crash on the corrected engine's `None`. Steps recorded in README §7. |
+| Collision engine duplicated 6× and stale in `phase7/`–`phase13/` | P1 | **CLOSED** (b6b6821) — every phase now re-exports `phase11/`; callers hardened for the `pc=None` contract via `pc_for_safety()` / `pc_text()`. `tests/scientific/test_engine_is_shared.py` (12 tests) guards against a copy reappearing, a phase resolving elsewhere, or the safety thresholds diverging by directory. All four legacy selftests still pass. |
 | No role model (ownership-only authorization) | P2 | Accepted; bounds deployment to single-tenant |
 | Rate limiting per process | P2 | Accepted; run one worker or add a shared limiter |
 | Sessions node-local | P2 | Accepted; rolling restart signs operators out |
