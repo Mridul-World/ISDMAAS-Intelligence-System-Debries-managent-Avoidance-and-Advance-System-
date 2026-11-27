@@ -1,0 +1,24 @@
+# ISDMAAS is a Python (FastAPI) service plus a static, framework-free operator
+# console in phase11/ (dashboard.html + console.js + console.css + vendor/).
+# Netlify hosts the console as a static site. The build copies only the
+# browser-facing files into dist/ so the Python sources, data and reports in
+# the repository are not published.
+[build]
+  command = """
+    rm -rf dist && mkdir -p dist && \
+    cp phase11/dashboard.html dist/index.html && \
+    cp phase11/dashboard.html phase11/console.js phase11/console.css dist/ && \
+    cp -r phase11/vendor dist/vendor && \
+    rm -f dist/vendor/README.md
+  """
+  publish = "dist"
+
+# dashboard.html notes that frame-ancestors cannot be set from a <meta> CSP and
+# must come from the layer serving the console as HTTP headers.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "frame-ancestors 'none'"
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"
